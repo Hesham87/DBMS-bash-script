@@ -64,6 +64,6 @@ case "$command" in
     *)
         echo "unsupported command $command"
         exit 1
-    esac 
+esac 
 
 
