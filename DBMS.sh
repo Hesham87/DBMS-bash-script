@@ -31,9 +31,20 @@ createTB(){
                 }
                 # Matches "Char(number)" where number is between 1 and 999
                 else if (system("echo " $i " | grep -qE \"^Char\{[1-9][0-9]{0,2}\}$\"") == 0) {     # ^Char\{: Starts with Char{.
-                    print $i >> ("tempfile.txt")                                                   # [1-9][0-9]{0,2}: Matches a number from 1 to 999 (e.g., 1, 50, 999).
+                    print $i >> ("tempfile.txt")                                                    # [1-9][0-9]{0,2}: Matches a number from 1 to 999 (e.g., 1, 50, 999).
                                                                                                     # \}$: Ends with a closing }.
-                }
+                }                                                                                   # -E, --extended-regexp     PATTERNS are extended regular expressions Provides more advanced syntax compared to basic regular expressions (BRE).
+                                                                                                                                # You don't need to escape certain metacharacters (e.g., +, |, ()).
+                                                                                                    # -G, --basic-regexp        PATTERNS are basic regular expressions (Requires escaping for metacharacters like +, |, and () to be treated as special regex constructs.)
+                                                                                                    # -P, --perl-regexp         PATTERNS are Perl regular expressions (supports advanced constructs like lookaheads, lookbehinds, and non-capturing groups.)
+                                                                                                                                # Examples:
+                                                                                                                                # echo "apple123orange" | grep -P "(?<=apple)\d+"  # Matches digits after 'apple' (lookbehind)
+                                                                                                                                # echo "1234" | grep -P "\d+"                     # Matches one or more digits (PCRE '\d')
+                                                                                                    # -e, --regexp=PATTERNS     use PATTERNS for matching  (when combining multiple patterns in a single grep command.) 
+                                                                                                                                # Examples:
+                                                                                                                                # echo "apple orange banana" | grep -e "apple" -e "banana"  # Matches 'apple' or 'banana'
+                                                                                                                                # echo "fruit" | grep -e "fruit"                           # Matches 'fruit'
+                                                                                                    # -q, --quiet, --silent     suppress all normal output
                 # Matches "Int(number)" where number is between 1 and 99999999
                 else if (system("echo " $i " | grep -qE \"^Int\{[1-9][0-9]{0,7}\}$\"") == 0) {
                     print $i >> ("tempfile.txt")
