@@ -1,5 +1,6 @@
 #!/bin/bash
 
+#function to create table the output inside the file is column_name:data_type:range:primary_key:not_null:unique
 createTB(){
     if [[ -e "$3/$1.txt" ]]; then
         echo "table already exists!"
@@ -9,6 +10,31 @@ createTB(){
     # touch "./tables/$1.txt"
     touch tempfile.txt
     echo "$2" | tr ',' '\n' | awk -v table_name="$1" -v table_path="$3" '
+    function check_column_name(column_name) {
+        # Declare variables as local to avoid global scope issues
+
+        # Rule 1: Column name length should be between 1 and 64 characters
+        if (length(column_name) < 1 || length(column_name) > 64) {
+            print "Invalid: column name length should be between 1 and 64 characters."
+            return 1
+        }
+
+        # Rule 2: column name should match the pattern [a-zA-Z][a-zA-Z0-9_-]+
+        if (column_name !~ /^[a-zA-Z][a-zA-Z0-9_-]*$/) {
+            print "Invalid: column name can only contain letters, numbers, underscores, and hyphens. And must begin with letters."
+            return 1
+        }
+        
+        reserved_keywords = "INFORMATION_SCHEMA PERFORMANCE_SCHEMA MYSQL SYS SHOW EXPLAIN SELECT INSERT UPDATE DELETE WHERE FROM JOIN ORDER GROUP CREATE DROP ALTER TABLE DATABASE INDEX KEY TRUNCATE DISTINCT"
+        
+        if (tolower(reserved_keywords) ~ column_name) {
+            print "Attribute name: ", column_name, "is a reserved keywords."
+            return 1
+        }
+
+        return 0  # Valid table name
+    }
+
     BEGIN {
         FS = " "  # Set field separator to white space
         primary_key=0
@@ -17,6 +43,9 @@ createTB(){
         exit_check=0
     }
     {
+        primary_key_curr=0
+        not_null=0
+        unique=0
         data_type=0
         for (i = 1; i <= NF; i++) {
             if (NF == 1){
@@ -28,19 +57,37 @@ createTB(){
 
             if (i > 1) {
                 if ($i == "primary_key") {
-                    print $i >> ("tempfile.txt")
 
                     if (primary_key == 0){
                         primary_key=1
+                        primary_key_curr=1
                     }else{
                         print "only one attribute can be primary key."
                         exit_check=1
                         exit 1
                     }
                 }
+                else if ($i == "not_null") {
+                    if (not_null == 0){
+                        not_null=1
+                    }else{
+                        print "not null stated twice."
+                        exit_check=1
+                        exit 1
+                    }
+                }
+                else if ($i == "unique") {
+                    if (unique == 0){
+                        unique=1
+                    }else{
+                        print "unique stated twice."
+                        exit_check=1
+                        exit 1
+                    }
+                }
                 # Matches "Char(number)" where number is between 1 and 999
                 else if (system("echo " $i " | grep -qE \"^char\{[1-9][0-9]{0,2}\}$\"") == 0) {     # ^Char\{: Starts with Char{.
-                    print $i >> ("tempfile.txt")                                                    # [1-9][0-9]{0,2}: Matches a number from 1 to 999 (e.g., 1, 50, 999).
+                                                                                                    # [1-9][0-9]{0,2}: Matches a number from 1 to 999 (e.g., 1, 50, 999).
                                                                                                     # \}$: Ends with a closing }.
                     if (data_type == 0){
                         data_type=1
@@ -48,9 +95,15 @@ createTB(){
                         print "you can only assign one data type to an attribute"
                         exit_check=1
                         exit 1
-                    } 
+                    }
+
+                    # print data type into temp file
+                    printf "%s", substr($i, 1, 4) >> ("tempfile.txt")
+                    printf ":" >> ("tempfile.txt")
+                    printf "%s", substr($i, 5) >> ("tempfile.txt")
+                    printf ":" >> ("tempfile.txt") 
                 }                                                                                   # -E, --extended-regexp     PATTERNS are extended regular expressions Provides more advanced syntax compared to basic regular expressions (BRE).
-                 # Matches "Int(number)" where number is between 1 and 99999999                                                 # You dont need to escape certain metacharacters (e.g., +, |, ()).
+                # Matches "Int(number)" where number is between 1 and 99999999                                                 # You dont need to escape certain metacharacters (e.g., +, |, ()).
                 else if (system("echo " $i " | grep -qE \"^int\{[1-9][0-9]{0,7}\}$\"") == 0) {      # -G, --basic-regexp        PATTERNS are basic regular expressions (Requires escaping for metacharacters like +, |, and () to be treated as special regex constructs.)
                     if (data_type == 0){
                         data_type=1
@@ -58,13 +111,19 @@ createTB(){
                         print "you can only assign one data type to an attribute"
                         exit_check=1
                         exit 1
-                    } 
-                    print $i >> ("tempfile.txt")                                                    # -P, --perl-regexp         PATTERNS are Perl regular expressions (supports advanced constructs like lookaheads, lookbehinds, and non-capturing groups.)
+                    }
+                    # print data type into temp file
+                    printf "%s", substr($i, 1, 3) >> ("tempfile.txt")
+                    printf ":" >> ("tempfile.txt")
+                    printf "%s", substr($i, 4) >> ("tempfile.txt")
+                    printf ":" >> ("tempfile.txt")                                                    # -P, --perl-regexp         PATTERNS are Perl regular expressions (supports advanced constructs like lookaheads, lookbehinds, and non-capturing groups.)
                 }                                                                                                               # Examples:
                 else if ($i == "date") {                                                                                        # echo "apple123orange" | grep -P "(?<=apple)\d+"  # Matches digits after "apple" (lookbehind)
-                    print $i >> ("tempfile.txt")                                                                                # echo "1234" | grep -P "\d+"                     # Matches one or more digits (PCRE '\d')
+                                                                                                                                # echo "1234" | grep -P "\d+"                     # Matches one or more digits (PCRE '\d')
                     if (data_type == 0){
                         data_type=1
+                        printf $i >> ("tempfile.txt")
+                        printf ":{0}:" >> ("tempfile.txt")
                     }else{
                         print "you can only assign one data type to an attribute"
                         exit_check=1
@@ -72,7 +131,7 @@ createTB(){
                     } 
                 }                                                                                   # -e, --regexp=PATTERNS     use PATTERNS for matching  (when combining multiple patterns in a single grep command.) 
                 else {                                                                                                          # Examples:
-                    print "Invalid input: Supported types are Primary_key, Int{1-99999999}, Char{1-999}, Date"                  # echo "apple orange banana" | grep -e "apple" -e "banana"  # Matches "apple" or "banana"
+                    print "Invalid input: Supported types are not_null, unique, Primary_key, Int{1-99999999}, Char{1-999}, Date"                  # echo "apple orange banana" | grep -e "apple" -e "banana"  # Matches "apple" or "banana"
                     exit_check=1
                     exit 1                                                                                                      # echo "fruit" | grep -e "fruit"                           # Matches "fruit"
                 }                                                                                   # -q, --quiet, --silent     suppress all normal output
@@ -82,27 +141,55 @@ createTB(){
                     exit 1
                 }            
             }      
-             else{
-                attribute_number+=1
+            else{
+                
                 attribute_names[attribute_number]=$i
-                print $i >> ("tempfile.txt")
+                attribute_number+=1
+                # Call the check_column_name function for each column name
+                printf $i >> ("tempfile.txt")
+                printf ":" >> ("tempfile.txt")
             }
         }
-        print ";;" >> ("tempfile.txt")
+        if(primary_key_curr == 1){
+            printf "1:1:1\n" >> ("tempfile.txt")
+        }else{
+            printf "0:" >> ("tempfile.txt")
+
+            if(not_null == 1){
+                printf "1:" >> ("tempfile.txt")
+            }else{
+                printf "0:" >> ("tempfile.txt")
+            }
+
+            if(unique == 1){
+                printf "1\n" >> ("tempfile.txt")
+            }else{
+                printf "0\n" >> ("tempfile.txt")
+            }
+        }
+        # print ";;" >> ("tempfile.txt")
     }
     END {
         if (exit_check == 1){
             exit 1
         }
+
         if (attribute_number == 0){
             print "error: no attributes assigned."
             exit 1
         }
+
         if (attribute_number < NR){
             print "error: unexpected \",\" "
             exit 1
         }
+
+
         for (i = 0; i < length(attribute_names); i++) {
+            exit_check=check_column_name(attribute_names[i])
+            if (exit_check == 1){
+                exit 1
+            }
             for (j = i + 1; j < length(attribute_names); j++) {
                 # Compare the strings case-insensitively by converting both to lowercase
                 if (tolower(attribute_names[i]) == tolower(attribute_names[j])) {
@@ -312,7 +399,7 @@ drop_tb(){
     table_name=$(echo "$table_name" | tr 'A-Z' 'a-z')
     delete_tb_path="$curr_db_path"
 
-    if ! [[ -e "$delete_tb_path" ]]; then
+    if ! [[ -e "$delete_tb_path/$table_name.txt" ]]; then
         echo "Error: No such table $table_name at path: $delete_tb_path"
         exit 1
 

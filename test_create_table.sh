@@ -76,6 +76,12 @@ run_test "create table INFORMATION_SCHEMA {ID primary_key int{100}, name char{50
 run_test "create table sys {ID primary_key int{100}, name char{50}};" "Invalid table name (table name is a reserved keyword)"
 run_test "create table invalid-name {ID primary_key int{100}, name char{50}};" "Invalid table name (contains special characters)"
 
+# 9. Invalid attribute name
+run_test "create table invalid20 {123invalid primary_key int{100}, name char{50}};" "Invalid column name (starting with a number)"
+run_test "create table invalid21 {ID primary_key int{100}, INFORMATION_SCHEMA char{50}};" "Invalid column name (column name is a reserved keyword)"
+run_test "create table invalid22 {ID primary_key int{100}, sys char{50}};" "Invalid column name (column name is a reserved keyword)"
+run_test "create table invalid23 {I@D primary_key int{100}, name char{50}};" "Invalid column name (contains special characters)"
+
 # 10. Invalid characters after the last `}`
 run_test "create table invalid_chars {ID primary_key int{100}} extra;" "Characters after closing brace"
 
