@@ -46,10 +46,10 @@ test_case() {
 
     output=$(bash "$DBMS_SCRIPT" < "$temp_file")
     rm "$temp_file"  # Clean up
-
+    
     last_line=$(echo -e "$output" | tail -n 1)
 
-    if [[ "$last_line" =~ ^unsupported\ command ]]; then
+    if [[ "$last_line" =~ ^syntax\ error\ missing\ semicolon. ]]; then
         output=$(echo -e "$output" | head -n -1)
     else
         output="$output"

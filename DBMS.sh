@@ -136,7 +136,7 @@ check_database_name() {
     fi
 
     # Rule 2: Table name should match the pattern [a-zA-Z][a-zA-Z0-9_-]+ (start with a letter, then letters, numbers, underscores, or hyphens)
-    if ! [[ "$database_name" =~ ^[a-zA-Z][a-zA-Z0-9_]*$ ]]; then      # +: This is a quantifier in regular expressions that means "one or more" of the preceding elements.
+    if ! [[ "$database_name" =~ ^[a-zA-Z][a-zA-Z0-9_]*$ ]]; then    # +: This is a quantifier in regular expressions that means "one or more" of the preceding elements.
                                                                     # $: This is the end of string anchor in regular expressions. It means the pattern must match all the way to the end of the string.
         echo "Invalid: Database name can only contain letters, numbers, underscores. And must begin with letters."
         exit 1
@@ -245,12 +245,156 @@ braces_check() {
   echo "${input:first_brace_pos+1:$((last_brace_pos-first_brace_pos-1))}" # This extracts the substring from the character after the first brace to the one before the last closing brace.
   return 0  # Return success status
 }
+
+check_db_selected(){
+    if [[ "$1" == "" ]]; then
+        echo "Error: no database selected."
+        exit 1
+    fi
+}
+
+select_db(){
+    local sql_command="$1"
+    third_word=$(echo "$sql_command" | awk '{print $3}') # get fourth word
+
+    if [[ "$third_word" != ";" ]]; then
+        echo "excpected ';' found: $third_word"
+        exit 1
+    fi
+
+    database_name=$(echo "$sql_command" | awk '{print $2}') # get second word
+    database_name=$(echo "$database_name" | tr 'A-Z' 'a-z')
+
+    if ! [[ -d "$HOME/Databases/$database_name" ]]; then
+        echo "Error: No such database: $database_name"
+        exit 1
+    else
+        curr_db_path="$HOME/Databases/$database_name"
+    fi
+    cd "$curr_db_path"
+}
+
+drop_db(){
+    fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
+
+    if [[ "$fourth_word" != ";" ]]; then
+        echo "excpected ';' found: $fourth_word"
+        exit 1
+    fi
+
+    database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
+    database_name=$(echo "$database_name" | tr 'A-Z' 'a-z')
+    delete_db_path="$HOME/Databases/$database_name"
+
+    if ! [[ -d "$delete_db_path" ]]; then
+        echo "Error: No such database: $database_name"
+        exit 1
+
+    else
+        rm -r "$delete_db_path"
+    fi
+}
+
+drop_tb(){
+    local curr_db_path="$1"
+    local sql_command="$2"
+
+    check_db_selected "$curr_db_path"
+
+    fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
+
+    if [[ "$fourth_word" != ";" ]]; then
+        echo "excpected ';' found: $fourth_word"
+        exit 1
+    fi
+
+    table_name=$(echo "$sql_command" | awk '{print $3}') # get third word
+    table_name=$(echo "$table_name" | tr 'A-Z' 'a-z')
+    delete_tb_path="$curr_db_path"
+
+    if ! [[ -e "$delete_tb_path" ]]; then
+        echo "Error: No such table $table_name at path: $delete_tb_path"
+        exit 1
+
+    else
+        delete_tb_path_header="$curr_db_path/.$table_name.txt"
+        rm "$delete_tb_path_header"
+        delete_tb_path_table="$curr_db_path/$table_name.txt"
+        rm "$delete_tb_path_table"
+    fi
+}
+
+create_db(){
+    local sql_command="$1"
+    fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
+
+    if [[ "$fourth_word" != ";" ]]; then
+        echo "excpected ';' found: $fourth_word"
+        exit 1
+    fi
+
+    database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
+    check_database_name "$database_name"
+    mkdir ~/Databases/$database_name
+}
+
+create_table(){
+    local curr_db_path="$1"
+    local sql_command="$2"
+    
+    check_db_selected "$curr_db_path"
+
+    if [[ "$sql_command" == *"{"* ]]; then
+        # Replace the first '{' with ' {' / replaces first occurence
+        sql_command="${sql_command/\{/' {'}"
+    else
+        echo "syntax error near: $type"
+        exit 1
+    fi
+
+    table_name=$(echo "$sql_command" | awk '{print $3}') # get third word
+    check_table_name "$table_name"
+    fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
+
+    if [[ "$fourth_word" != "{"* ]]; then
+        echo "excpected '{' found: $fourth_word"
+        exit 1
+    fi
+
+    values=$(braces_check "$sql_command")  # $(....) excutes in a subshell so exit doesn't terminate the whole script
+    
+    # Check for the exit status of the function
+    if [[ $? -ne 0 ]]; then
+        echo "$values"
+        exit 1
+    fi
+    
+    values=$(echo "$values" | tr 'A-Z' 'a-z') 
+
+    createTB "$table_name" "$values" "$curr_db_path"
+
+}
 curr_db_path=""
+
 
 while true; do 
     read -p "enter sql command: " sql_command
-
     sql_command=$(echo "$sql_command" | tr '()' '{}') #replace all '()' with '{}' due to errors with syntax in echo
+    
+    #check for semi-colon and separate it from other words
+    if [[ "$sql_command" == *";" ]]; then
+        # Replace the first ';' with ' ;' / replaces first occurence
+        sql_command="${sql_command/\;/' ;'}"
+    else
+        echo "syntax error missing semicolon."
+        exit 1
+    fi
+
+    # Check if there are characters after the semicolon that are not whitespace
+    if [[ "${sql_command#*;}" =~ [^[:space:]] ]]; then  # ${sql_command#*;}: This removes everything before and including the first semicolon ;
+        echo "Error: There are non-whitespace characters after the semicolon."
+        exit 1
+    fi
 
     command=$(echo "$sql_command" | awk '{print $1}') # get first word
     command=$(echo "$command" | tr 'A-Z' 'a-z')    #convert to lower case
@@ -261,65 +405,10 @@ while true; do
             type=$(echo "$type" | tr 'A-Z' 'a-z')    #convert to lower case
 
             if [[ "$type" == "table" ]]; then   #-eq is used for integer comparison only
-
-                if [[ "$curr_db_path" == "" ]]; then
-                    echo "Error: no database selected."
-                    exit 1
-                fi
-
-                if [[ "$sql_command" == *"{"* ]]; then
-                    # Replace the first '{' with ' {' / replaces first occurence
-                    sql_command="${sql_command/\{/' {'}"
-                else
-                    echo "syntax error near: $type"
-                    exit 1
-                fi
-
-                table_name=$(echo "$sql_command" | awk '{print $3}') # get third word
-                check_table_name "$table_name"
-                fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
-
-                if [[ "$fourth_word" != "{"* ]]; then
-                    echo "excpected '{' found: $fourth_word"
-                    exit 1
-                fi
-
-                values=$(braces_check "$sql_command")  # $(....) excutes in a subshell so exit doesn't terminate the whole script
-                # Check for the exit status of the function
-                if [[ $? -ne 0 ]]; then
-                    echo "$values"
-                    exit 1
-                fi
-                
-                values=$(echo "$values" | tr 'A-Z' 'a-z') 
-
-                createTB "$table_name" "$values" "$curr_db_path"
+                create_table "$curr_db_path" "$sql_command"
 
             elif [[ "$type" == "database" ]]; then
-                if [[ "$sql_command" == *";" ]]; then
-                    # Replace the first ';' with ' ;' / replaces first occurence
-                    sql_command="${sql_command/\;/' ;'}"
-                else
-                    echo "syntax error near: $type"
-                    exit 1
-                fi
-
-                fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
-
-                if [[ "$fourth_word" != ";" ]]; then
-                    echo "excpected ';' found: $fourth_word"
-                    exit 1
-                fi
-
-                # Check if there are characters after the semicolon that are not whitespace
-                if [[ "${sql_command#*;}" =~ [^[:space:]] ]]; then  # ${sql_command#*;}: This removes everything before and including the first semicolon ;
-                    echo "Error: There are non-whitespace characters after the semicolon."
-                    exit 1
-                fi
-
-                database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
-                check_database_name "$database_name"
-                mkdir ~/Databases/$database_name
+                create_db "$sql_command"
             else
                 echo "unsupported type $type"
                 exit 1
@@ -327,36 +416,50 @@ while true; do
             
             ;;
         use)
-            if [[ "$sql_command" == *";" ]]; then
-                # Replace the first ';' with ' ;' / replaces first occurence
-                sql_command="${sql_command/\;/' ;'}"
+            select_db "$sql_command"
+            ;;
+        drop)
+            type=$(echo "$sql_command" | awk '{print $2}') # get second word
+            type=$(echo "$type" | tr 'A-Z' 'a-z')    #convert to lower case
+
+            if [[ "$type" == "table" ]]; then   #-eq is used for integer comparison only
+                drop_tb "$curr_db_path" "$sql_command"
+
+            elif [[ "$type" == "database" ]]; then   #-eq is used for integer comparison only
+                drop_db "$sql_command"
+
             else
-                echo "syntax error near: $type"
+                echo "unsupported type $type"
                 exit 1
             fi
+            ;;
+        show)
 
-            third_word=$(echo "$sql_command" | awk '{print $3}') # get fourth word
+            third_word=$(echo "$sql_command" | awk '{print $3}') # get third word
 
             if [[ "$third_word" != ";" ]]; then
-                echo "excpected ';' found: $third_word"
+                echo "excpected ';' found: $fourth_word"
                 exit 1
             fi
 
-            # Check if there are characters after the semicolon that are not whitespace
-            if [[ "${sql_command#*;}" =~ [^[:space:]] ]]; then  # ${sql_command#*;}: This removes everything before and including the first semicolon ;
-                echo "Error: There are non-whitespace characters after the semicolon."
+            keyword=$(echo "$sql_command" | awk '{print $2}') # get second word
+            keyword=$(echo "$keyword" | tr 'A-Z' 'a-z')
+            
+            if [[ "$keyword" == "databases" ]]; then
+                ls ~/Databases
+            
+            elif [[ "$keyword" == "tables" ]]; then
+                if [[ "$curr_db_path" == "" ]]; then
+                    echo "Error: no database selected."
+                    exit 1
+                fi
+                ls "$curr_db_path"
+            else
+                echo "expected DATABASES or TABLES found: $keyword"
                 exit 1
             fi
-
-            database_name=$(echo "$sql_command" | awk '{print $2}') # get second word
-            database_name=$(echo "$database_name" | tr 'A-Z' 'a-z')
-            curr_db_path="$HOME/Databases/$database_name"
-            if ! [[ -d "$curr_db_path" ]]; then
-                echo "Error: No such database: $database_name"
-                exit 1
-            fi
-            cd "$curr_db_path"
             ;;
+
         *)
             echo "unsupported command: $command"
             exit 1
