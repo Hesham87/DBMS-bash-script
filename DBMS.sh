@@ -587,7 +587,7 @@ select_table(){
 
     end_of_table=0
 
-    table=""
+    table_name=""
 
     if ! [[ from_index -eq -1 ]]; then
 
@@ -600,13 +600,36 @@ select_table(){
         table_name=$(get_words_from_to $from_index $end_of_table "$sql_command")
 
         table_name=$(echo "$table_name" | tr -d '[:space:]') #remove white spaces
-    
-    fi
 
-    if ! [[ -e "$curr_db_path/$table_name.txt" ]]; then
-        echo "couldn't find the table: $table_name at the path: $curr_db_path "
-        echo "please note that only one table is allowed we don't current support join quires. please wait for further notice"
-        exit 1  
+        if ! [[ -e "$curr_db_path/$table_name.txt" ]]; then
+            echo "couldn't find the table: $table_name at the path: $curr_db_path "
+            echo "please note that only one table is allowed we don't current support join quires. please wait for further notice"
+            exit 1  
+        fi
+    
+    else
+
+        if ! [[ where_index -eq -1 ]]; then
+            echo "Error: No from keyword."
+            exit 1
+        else
+
+            select_statment=$(get_words_from_to "1" "$semicolon_index" "$sql_command")
+            num_fields=$(echo "$select_statment" | awk -F"," '{print NF}')
+            select_table="$HOME/database_temp/select.txt"
+            touch "$select_table"
+
+            for i in $(seq 1 $num_fields); do
+                field=$(echo "$select_statment" | cut -d"," -f"$i")
+                if [[ $i -eq $num_fields ]]; then
+                    python3 -c  "print(eval('$field'))" >> "$select_table"
+                else
+                    python3 -c  "print(eval('$field'), end=':')" >> "$select_table" 
+                fi
+            done
+            cat "$select_table"
+            rm "$select_table"
+        fi
     fi
 
     if ! [[ where_index -eq -1 ]]; then
@@ -630,10 +653,10 @@ select_table(){
         select_statment=$(get_words_from_to "1" "$from_index" "$select_sql")
 
 
-        select_statment=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
+        select_replaced=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
 
 
-        visulize_table "$select_statment" "$table_file"
+        visulize_table "$select_replaced" "$table_file" "$select_statment"
       
     fi
     
@@ -668,7 +691,8 @@ visulize_table(){
 
     }
     ' "$file"
-    counter=0
+
+    
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
     select_table="$HOME/database_temp/select.txt"
     touch "$select_table"
@@ -676,16 +700,77 @@ visulize_table(){
         for i in $(seq 1 $num_fields); do
             field=$(echo "$line" | cut -d"," -f"$i")
             if [[ $i -eq $num_fields ]]; then
-                echo "$[ $field ]" >> "$select_table"
+                python3 -c  "print(eval('$field'))" >> "$select_table"
             else
-                echo -n "$[ $field ]:" >> "$select_table" 
+                python3 -c  "print(eval('$field'), end=':')" >> "$select_table" 
             fi
         done
     done < "$temp_file"
     rm "$temp_file"
     rm "$file"
-    cat "$select_table"
+    print_table "$3" "$select_table"
     rm "$select_table"
+}
+
+
+# Function to print a row with proper formatting
+print_row() {
+    local row="$1"
+    IFS=':' read -r -a columns <<< "$row"
+    for ((i = 0; i < ${#columns[@]}; i++)); do
+        if ((i == 0)); then
+            printf "%-15s" "${columns[i]}"
+        else
+            printf ":%-15s" "${columns[i]}"
+        fi
+    done
+    echo
+}
+
+
+print_table(){
+    # Define colors for the header
+    HEADER_COLOR='\033[1;34m'  # Blue
+    Body_COLOR='\033[1;33m'    #yellow
+    RESET='\033[0m'           # Reset to default
+
+    header_table="$1"
+    table="$2"
+
+    # Define the table header and data
+    header=""
+
+    num_fields=$(echo "$header_table" | awk -F"," '{print NF}')
+
+    for i in $(seq 1 $num_fields); do
+        field=$(echo "$header_table" | cut -d"," -f"$i")
+        if [[ $i -eq $num_fields ]]; then
+            header="$header$field"
+        else
+            header="$header$field:"
+        fi
+    done
+
+
+    # Print the header with color
+    echo -e "${HEADER_COLOR}"
+    print_row "$header"
+    echo -e "${RESET}"
+    echo -e "${Body_COLOR}"
+
+    # Print a separator
+    printf '%0.s-' {1..70}
+    echo
+
+
+    while IFS= read -r row; do
+        print_row "$row"
+    done < "$table"
+    echo -e "${RESET}"
+    # Print each row
+    # for row in "${rows[@]}"; do
+    #     print_row "$row"
+    # done
 }
 
 create_table(){
