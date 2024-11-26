@@ -425,6 +425,269 @@ create_db(){
     mkdir ~/Databases/$database_name
 }
 
+word_first_index(){
+    string="$1"
+    key="$2"
+
+    echo "$string" | awk -v word="$key" '
+        {
+            word_index = -1
+            for (i = 1; i <= NF; i++){ 
+                if ($i == word){
+                    # check if first occurens.
+                    if (word_index == -1){ 
+                        word_index = i
+                    }else{
+                        # set index to -2 as a code that word has more than one index which is an error. 
+                        word_index = -2
+                    }
+                }
+            }
+            print word_index
+        }'
+}
+
+get_words_from_to(){
+    string="$3"
+    echo "$string" | awk -v from="$1" -v to="$2" '
+        {
+            string_x=" "
+            for (i=from+1; i<to; i++){ 
+                string_x = string_x " " $i 
+            }
+            print string_x
+        }'
+}
+
+replace_column_name(){
+    sql_command="$1"
+    file="$2"
+    awk -v sql="$sql_command" '
+    BEGIN {
+        FS = ":"  # column delimeter
+        command = sql
+    }
+
+    {
+        # Creating a copy of the sql in awk serves to preserve the original expression for reference and reusability.  
+        curr_col = "col" NR " "  
+        gsub(" "$1" ", curr_col, command) # \b to replace the column name with col(column number) ex col1, col2, col3...
+
+        # Replace column names with their respective values
+        # for (i = 1; i <= NF; i++) {
+        #     gsub("col" i, $i, command)
+        #     print command
+        # }
+    }
+
+    END{
+        print command
+    }
+    ' "$file"
+    
+}
+
+evaluate_expression(){
+    expression="$1"   # The expression, e.g., "col1 + col2 > 10"
+    file="$2"         # The file to process, e.g., "file.csv"
+    table="$3"
+
+    # echo "" | sed "s/\b$word\b/$replacement/g"
+    temp_file="$HOME/database_temp//temp87.txt"
+    touch "$file"
+
+    awk -v expr="$expression" -v file="$temp_file" '
+    BEGIN {
+        FS = ":"  # column delimeter
+    }
+
+    {
+        # Creating a copy of the expression in awk serves to preserve the original expression for reference and reusability.
+        eval_expr = expr  
+
+        # Replace column names with their respective values
+        for (i = 1; i <= NF; i++) {
+            gsub("col" i, $i, eval_expr)
+            # replace "=" with "==" because the first is an assignment operand
+            gsub(" = ", " == ", eval_expr)
+        }
+        # print "_____________________"
+        expr_string= eval_expr 
+        print expr_string >> file
+
+    }
+    ' "$file"
+    counter=0
+    while IFS= read -r line; do
+        if [[ $(echo "$[ $line ]") -eq 1 ]]; then
+            awk -v n=$counter 'NR==n' "$file" >> "$table"
+        fi
+        counter=$((counter+1))
+    done < "$temp_file"
+    rm "$temp_file"
+}
+
+select_table(){
+    local curr_db_path="$1"
+    local sql_command="$2"
+
+    check_db_selected "$curr_db_path"
+
+    keywords=("select" "where" "from" "group" "distinct" ";")
+
+    sql_command=$(echo "$sql_command" | tr 'A-Z' 'a-z')  # convert to lower case
+
+
+    # Replace '+,-,/,*,=' with ' + ', and so on. // replaces all occurences
+    sql_command="${sql_command//\+/' + '}"
+    sql_command="${sql_command//\-/' - '}"
+    sql_command="${sql_command//\=/' = '}"
+    sql_command="${sql_command//\*/' * '}"
+    sql_command="${sql_command//\//' / '}"
+    sql_command="${sql_command/\{/' { '}"
+    sql_command="${sql_command/\,/' , '}"
+
+
+    check_select=$(word_first_index "$sql_command" "select")
+
+
+    if [[ check_select -eq -2 ]]; then
+        echo "Sorry subquires are not implemented in this DBMS. Please wait for further notice."
+        exit 1
+    fi
+
+
+    check_group=$(word_first_index "$sql_command" "group")
+
+
+    if ! [[ check_group -eq -1 ]]; then
+        echo "Sorry group is not implemented in this DBMS. Please wait for further notice."
+        exit 1
+    fi
+
+
+    from_index=$(word_first_index "$sql_command" "from")
+
+
+    if [[ from_index -eq -2 ]]; then
+        echo "syntax error more than one from keyword detected."
+        exit 1
+    fi
+
+
+    where_index=$(word_first_index "$sql_command" "where")
+
+
+    if [[ where_index -eq -2 ]]; then
+        echo "syntax error more than one Where keyword detected."
+        exit 1
+    fi
+
+    semicolon_index=$(word_first_index "$sql_command" ";")
+
+    end_of_table=0
+
+    table=""
+
+    if ! [[ from_index -eq -1 ]]; then
+
+        if [[ where_index -eq -1 ]]; then
+            end_of_table=$semicolon
+        else
+            end_of_table=$where_index
+        fi
+
+        table_name=$(get_words_from_to $from_index $end_of_table "$sql_command")
+
+        table_name=$(echo "$table_name" | tr -d '[:space:]') #remove white spaces
+    
+    fi
+
+    if ! [[ -e "$curr_db_path/$table_name.txt" ]]; then
+        echo "couldn't find the table: $table_name at the path: $curr_db_path "
+        echo "please note that only one table is allowed we don't current support join quires. please wait for further notice"
+        exit 1  
+    fi
+
+    if ! [[ where_index -eq -1 ]]; then
+        if [[ from_index -eq -1 ]]; then
+            echo "Error: no from keyword found."
+            exit 1
+        fi
+
+        expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
+
+        expression=$(replace_column_name "$expression" "$curr_db_path/.$table_name.txt")
+        
+        table_file="$HOME/database_temp/table.txt"
+        touch "$table_file"
+
+
+        evaluate_expression "$expression" "$curr_db_path/$table_name.txt" "$table_file"
+
+        select_sql=" $sql_command "
+
+        select_statment=$(get_words_from_to "1" "$from_index" "$select_sql")
+
+
+        select_statment=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
+
+
+        visulize_table "$select_statment" "$table_file"
+      
+    fi
+    
+}
+
+visulize_table(){
+    expression="$1"   # The expression, e.g., "col1 + col2 > 10"
+    file="$2"         # The file to process, e.g., "file.csv"
+
+    # echo "" | sed "s/\b$word\b/$replacement/g"
+    temp_file="$HOME/database_temp/temp87.txt"
+    touch "$file"
+
+    awk -v expr="$expression" -v file="$temp_file" '
+    BEGIN {
+        FS = ":"  # column delimeter
+    }
+
+    {
+        # Creating a copy of the expression in awk serves to preserve the original expression for reference and reusability.
+        eval_expr = expr  
+
+        # Replace column names with their respective values
+        for (i = 1; i <= NF; i++) {
+            gsub("col" i, $i, eval_expr)
+            # replace "=" with "==" because the first is an assignment operand
+            gsub(" = ", " == ", eval_expr)
+        }
+        # print "_____________________"
+        expr_string= eval_expr 
+        print expr_string >> file
+
+    }
+    ' "$file"
+    counter=0
+    num_fields=$(echo "$expression" | awk -F"," '{print NF}')
+    select_table="$HOME/database_temp/select.txt"
+    touch "$select_table"
+    while IFS= read -r line; do
+        for i in $(seq 1 $num_fields); do
+            field=$(echo "$line" | cut -d"," -f"$i")
+            if [[ $i -eq $num_fields ]]; then
+                echo "$[ $field ]" >> "$select_table"
+            else
+                echo -n "$[ $field ]:" >> "$select_table" 
+            fi
+        done
+    done < "$temp_file"
+    rm "$temp_file"
+    rm "$file"
+    cat "$select_table"
+    rm "$select_table"
+}
+
 create_table(){
     local curr_db_path="$1"
     local sql_command="$2"
@@ -504,6 +767,9 @@ while true; do
             ;;
         use)
             select_db "$sql_command"
+            ;;
+        select)
+            select_table "$curr_db_path" "$sql_command"
             ;;
         drop)
             type=$(echo "$sql_command" | awk '{print $2}') # get second word
