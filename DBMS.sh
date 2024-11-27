@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+
+
 #function to create table the output inside the file is column_name:data_type:range:primary_key:not_null:unique
 createTB(){
     if [[ -e "$3/$1.txt" ]]; then
@@ -526,8 +529,8 @@ evaluate_expression(){
         # line="${line//\"/\\\"}"
         # echo "3 {expression}: $line"
         check=$(evaluate_expression2 "$line")
-        echo "line: $line"
-        echo "check: $check"
+        # echo "line: $line"
+        # echo "check: $check"
         if [[  $check == "True" ]]; then
             awk -v n=$counter 'NR==n' "$file" >> "$table"
         elif ! [[ $check == "False" ]]; then
@@ -824,7 +827,6 @@ visulize_table(){
         for i in $(seq 1 $num_fields); do
             field=$(echo "$line" | cut -d"," -f"$i")
             trimmed_field=$(echo "$field" | tr -d ' ')
-            echo "field: $field"
             if [[ $trimmed_field == "*" ]]; then
                 if [[ $i -eq $num_fields ]]; then
                     awk -v line="$counter" 'NR == line' "$main_table" | tr '\\\"' ' ' >> "$select_table"
@@ -969,6 +971,195 @@ create_table(){
     createTB "$table_name" "$values" "$curr_db_path"
 
 }
+
+function insert_with_test() {
+    # Define base directory for tables
+    local base_dir="$2"
+    # Parse and clean SQL
+    local sql_command=$(echo "$sql_command" | sed -e 's/INSERT//g' -e 's/INTO//g' -e 's/VALUES//g' | sed -e 's/insert//g' -e 's/into//g' -e 's/values//g')
+    #echo "SQL Line: $sql_command" 
+    # Extract table name and values
+    local table_name=$(echo "$sql_command" | awk -F'[{]' '{gsub(/[ \t]/, "", $1); print $1}')
+    #echo "Extracted Table Name: $table_name"
+    local values=$(echo "$sql_command" | awk -F'[{]' '{print $3}' | sed 's/[};]//g')
+    #echo "Extracted values: $values"
+
+    # Define paths for table and metadata
+    local table_path="$base_dir/$table_name.txt"
+    local meta_path="$base_dir/.${table_name}.txt"
+
+    # Check if table and metadata exist
+    if [[ ! -f "$table_path" || ! -f "$meta_path" ]]; then
+        echo "Error: Table or metadata not found in $base_dir. table path : $table_path, meta data : $meta_path"
+        return
+    fi
+    local columns=$(echo "$sql_command" | awk -F'[{]' '{print $2}' | sed 's/}//g' | xargs)
+    local values=$(echo "$sql_command" | awk -F'[{]' '{print $3}' | sed 's/[};]//g' | xargs)
+    echo "columns is : $columns , values is : $values"
+    # Count the number of columns and values
+    local num_columns=$(echo "$columns" | awk -F',' '{print NF}')
+    local num_values=$(echo "$values" | awk -F',' '{print NF}')
+    echo "num columns is : $num_columns , num values is : $num_values"
+    # Validate number of columns and values
+    if ((num_columns != num_values)); then
+        echo "Error: Number of columns ($num_columns) does not match number of values ($num_values)."
+        return 1
+    fi
+    IFS=',' read -ra column_array <<< "$columns"
+    IFS=',' read -ra value_array <<< "$values"
+
+    # Check if number of columns matches number of values
+    if [[ "${#column_array[@]}" -ne "${#value_array[@]}" ]]; then
+        echo "Error: Number of columns (${#column_array[@]}) does not match number of values (${#value_array[@]})."
+        return 1
+    fi
+
+    # Create a record array matching all table columns, default to empty
+    local table_columns=($(awk -F':' '{print $1}' "$meta_path"))
+    local record=()
+    for ((i = 0; i < ${#table_columns[@]}; i++)); do
+        record[i]=""
+    done
+    result=0
+    # Validate each provided column and value
+    for ((i = 0; i < ${#column_array[@]}; i++)); do
+        if [[ $result -eq -1 ]]; then
+            exit 1
+        else
+            echo "$result"
+        fi
+        local column="${column_array[$i]}"
+        local value="${value_array[$i]}"
+
+        # Find column metadata
+        local column_index=-1
+        for ((j = 0; j < ${#table_columns[@]}; j++)); do
+            if [[ "${table_columns[$j]}" == "$column" ]]; then
+                column_index=$j
+                break
+            fi
+        done
+
+        if [[ $column_index -eq -1 ]]; then
+            echo "Error: Column '$column' does not exist in the table metadata."
+            return 1
+        fi
+
+        # Extract metadata details
+        local metadata_line=$(sed -n "$((column_index + 1))p" "$meta_path")
+        local datatype=$(echo "$metadata_line" | awk -F':' '{print $2}')
+        local size=$(echo "$metadata_line" | awk -F':' '{print $3}' | sed 's/[^0-9]//g')
+        local primary_key=$(echo "$metadata_line" | awk -F':' '{print $4}')
+        local not_null=$(echo "$metadata_line" | awk -F':' '{print $5}')
+        local unique=$(echo "$metadata_line" | awk -F':' '{print $6}')
+
+        # Validate value against metadata
+        case $datatype in
+            int)
+                if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+                    echo "Error: Value '$value' for column '$column' must be an integer."
+                    return 1
+                fi
+                ;;
+            char)
+                if ! [[ "$value" =~ ^[a-zA-Z0-9_\ ]+$ ]]; then
+                    echo "Error: Value '$value' for column '$column' must be a valid string."
+                    return 1
+                fi
+                if [[ "${#value}" -gt "$size" ]]; then
+                    echo "Error: Value '$value' for column '$column' exceeds size limit ($size)."
+                    return 1
+                fi
+                ;;
+            date)
+                if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                    echo "Error: Value '$value' for column '$column' must be in YYYY-MM-DD format."
+                    return 1
+                fi
+                if ! date -d "$value" &>/dev/null; then
+                    echo "Error: Value '$value' for column '$column' is not a valid date."
+                    return 1
+                fi
+                ;;
+            *)
+                echo "Error: Unknown datatype '$datatype' for column '$column'."
+                return 1
+                ;;
+        esac
+        # Check constraints
+        if [[ "$primary_key" -eq 1 ]]; then
+            # Primary key: Cannot be null and must be unique
+            echo "is priamry $primary_key"
+            if [[ -z "$value" ]]; then
+                echo "Error: Column '$column' is a primary key and cannot be null."
+                return 1
+            fi
+            # awk -F':' -v val="$value" -v col="$((column_index + 1))" '{if ($col == val) exit 1}' "$table_path")
+            col=$((column_index + 1))
+            num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
+
+            while IFS= read -r line; do
+                for i in $(seq 1 $num_fields); do
+                    field=$(echo "$line" | cut -d":" -f"$col")
+                    if [[ $field -eq $value ]]; then
+                        echo "________exiting"
+                        exit 1
+                    fi
+                done
+            done < "$table_path"
+
+            echo "value $value, $val,col $col, column_index $column_index, result $result"
+            if [[ $? -eq -1 ]]; then
+                echo "Error: Primary key constraint violated for column '$column'. Value '$value' already exists."
+                return 1
+            fi
+
+        fi
+
+        if [[ "$not_null" -eq 1 ]]; then
+            # Not null: Value cannot be empty
+            echo "is not null"
+            if [[ -z "$value" ]]; then
+                echo "Error: Column '$column' cannot be null."
+                return 1
+            fi
+        fi
+
+        if [[ "$unique" -eq 1 ]]; then
+            echo "is unique"
+            # Unique constraint: Value must not already exist
+            local unique_exists=$(awk -F':' -v val="$value" -v col="$((column_index + 1))" 'NR>1 {if ($col == val) exit 1}' "$table_path")
+            if [[ $? -eq 1 ]]; then
+                echo "Error: Unique constraint violated for column '$column'. Value '$value' already exists."
+                return 1
+            fi
+        fi
+
+
+        # Set value in the record
+        record[$column_index]="$value"
+    done
+
+    # Ensure all required columns (NOT NULL and PRIMARY KEY) are filled
+    for ((i = 0; i < ${#table_columns[@]}; i++)); do
+        local metadata_line=$(sed -n "$((i + 1))p" "$meta_path")
+        local col_name=$(echo "$metadata_line" | awk -F':' '{print $1}')
+        local not_null=$(echo "$metadata_line" | awk -F':' '{print $5}')
+        local primary_key=$(echo "$metadata_line" | awk -F':' '{print $4}')
+
+        if [[ "$not_null" -eq 1 || "$primary_key" -eq 1 ]]; then
+            if [[ -z "${record[$i]}" ]]; then
+                echo "Error: Column '$col_name' is required and cannot be null."
+                return 1
+            fi
+        fi
+    done
+
+    # Append the record to the table
+    echo "${record[*]}" | tr ' ' ':' >> "$table_path"
+    echo "Record inserted successfully into '$table_name'."
+ 
+}
 curr_db_path=""
 
 
@@ -1030,6 +1221,9 @@ while true; do
                 echo "unsupported type $type"
                 exit 1
             fi
+            ;;
+        insert)
+            insert_with_test "$sql_command" "$curr_db_path"
             ;;
         show)
 
