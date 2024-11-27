@@ -6,9 +6,9 @@ createTB(){
         echo "table already exists!"
         exit 1
     fi
-    # touch "./tables/.$1.txt"
-    # touch "./tables/$1.txt"
-    touch tempfile.txt
+    # > "./tables/.$1.txt"
+    # > "./tables/$1.txt"
+    > tempfile.txt
     echo "$2" | tr ',' '\n' | awk -v table_name="$1" -v table_path="$3" '
     function check_column_name(column_name) {
         # Declare variables as local to avoid global scope issues
@@ -253,9 +253,9 @@ check_table_name() {
     fi
 
     # Rule 2: Table name should match the pattern [a-zA-Z][a-zA-Z0-9_-]+ (start with a letter, then letters, numbers, underscores, or hyphens)
-    if ! [[ "$table_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then      # +: This is a quantifier in regular expressions that means "one or more" of the preceding elements.
+    if ! [[ "$table_name" =~ ^[a-zA-Z][a-zA-Z0-9_]*$ ]]; then      # +: This is a quantifier in regular expressions that means "one or more" of the preceding elements.
                                                                     # $: This is the end of string anchor in regular expressions. It means the pattern must match all the way to the end of the string.
-        echo "Invalid: Table name can only contain letters, numbers, underscores, and hyphens. And must begin with letters."
+        echo "Invalid: Table name can only contain letters, numbers, and underscores. And must begin with letters."
         exit 1
     fi    
 
@@ -422,6 +422,10 @@ create_db(){
 
     database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
     check_database_name "$database_name"
+    if [ -d "$HOME/Databases/$database_name" ]; then
+        echo "Error: Directory already exists!"
+        exit 1
+    fi
     mkdir ~/Databases/$database_name
 }
 
@@ -460,7 +464,7 @@ get_words_from_to(){
 }
 
 replace_column_name(){
-    sql_command="$1"
+    local sql_command="$1"
     file="$2"
     awk -v sql="$sql_command" '
     BEGIN {
@@ -470,7 +474,7 @@ replace_column_name(){
 
     {
         # Creating a copy of the sql in awk serves to preserve the original expression for reference and reusability.  
-        curr_col = "col" NR " "  
+        curr_col = " col" NR " "  
         gsub(" "$1" ", curr_col, command) # \b to replace the column name with col(column number) ex col1, col2, col3...
 
         # Replace column names with their respective values
@@ -493,9 +497,8 @@ evaluate_expression(){
     table="$3"
 
     # echo "" | sed "s/\b$word\b/$replacement/g"
-    temp_file="$HOME/database_temp//temp87.txt"
-    touch "$file"
-
+    temp_file="$HOME/database_temp/temp87.txt"
+    > "$temp_file"
     awk -v expr="$expression" -v file="$temp_file" '
     BEGIN {
         FS = ":"  # column delimeter
@@ -517,10 +520,20 @@ evaluate_expression(){
 
     }
     ' "$file"
-    counter=0
+    counter=1
     while IFS= read -r line; do
-        if [[ $(echo "$[ $line ]") -eq 1 ]]; then
+        # line=$(echo "$line" | sed 's/\("[^"]*"\)/\\\1/g')
+        # line="${line//\"/\\\"}"
+        # echo "3 {expression}: $line"
+        check=$(evaluate_expression2 "$line")
+        echo "line: $line"
+        echo "check: $check"
+        if [[  $check == "True" ]]; then
             awk -v n=$counter 'NR==n' "$file" >> "$table"
+        elif ! [[ $check == "False" ]]; then
+            echo "Error: wrong where expression"
+            rm "$temp_file"
+            exit 1
         fi
         counter=$((counter+1))
     done < "$temp_file"
@@ -537,16 +550,55 @@ select_table(){
 
     sql_command=$(echo "$sql_command" | tr 'A-Z' 'a-z')  # convert to lower case
 
+    output=""
+    in_quotes=0
+    skip=0
+    counter=0
+    # Replace '+,-,/,*,=' with ' + ', and so on. // replaces all occurenceswhile IFS= read -r -n1 char; do
+    while IFS= read -r -n1 char; do
+        counter=$((counter + 1))
+        if [[ $skip -eq 0 ]]; then  # if skip is set to 1 skip this character
+            if [[ "$char" == '"' ]]; then
+                if [[ $in_quotes -eq 0 ]]; then
+                    in_quotes=1
+                else
+                    in_quotes=0
+                fi
+                output+="$char"
+            elif [[ "$char" == "-" && $in_quotes -eq 0 ]]; then
+                output+=" - "
+            elif [[ "$char" == "+" && $in_quotes -eq 0 ]]; then
+                output+=" + "
+            elif [[ "$char" == "*" && $in_quotes -eq 0 ]]; then
+                output+=" * "
+            elif [[ "$char" == "/" && $in_quotes -eq 0 ]]; then
+                output+=" / "
+            elif [[ "$char" == "{" && $in_quotes -eq 0 ]]; then
+                output+=" { "
+            elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
+                output+=" , " 
+            elif [[ "$char" == ">" && ${sql_command:counter:1} == "=" && $in_quotes -eq 0 ]]; then
+                output+=" >= "
+                skip=2
+            elif [[ "$char" == "<" && ${sql_command:counter:1} == "=" && $in_quotes -eq 0 ]]; then
+                output+=" <= "
+                skip=2
+            elif [[ "$char" == ">" && $in_quotes -eq 0 ]]; then
+                output+=" > "
+            elif [[ "$char" == "<" && $in_quotes -eq 0 ]]; then
+                output+=" < "
+            elif [[ "$char" == "=" && $in_quotes -eq 0 ]]; then
+                output+=" = "      
+            else
+                output+="$char"
+            fi
+        else
+            skip=0
+        fi
+    done <<< "$sql_command"
 
-    # Replace '+,-,/,*,=' with ' + ', and so on. // replaces all occurences
-    sql_command="${sql_command//\+/' + '}"
-    sql_command="${sql_command//\-/' - '}"
-    sql_command="${sql_command//\=/' = '}"
-    sql_command="${sql_command//\*/' * '}"
-    sql_command="${sql_command//\//' / '}"
-    sql_command="${sql_command/\{/' { '}"
-    sql_command="${sql_command/\,/' , '}"
-
+    sql_command=$output
+    # echo "$output"
 
     check_select=$(word_first_index "$sql_command" "select")
 
@@ -588,27 +640,33 @@ select_table(){
     end_of_table=0
 
     table_name=""
-
+    full_header=""
     if ! [[ from_index -eq -1 ]]; then
-
         if [[ where_index -eq -1 ]]; then
-            end_of_table=$semicolon
+            end_of_table=$semicolon_index
         else
             end_of_table=$where_index
         fi
 
         table_name=$(get_words_from_to $from_index $end_of_table "$sql_command")
-
         table_name=$(echo "$table_name" | tr -d '[:space:]') #remove white spaces
+        
 
         if ! [[ -e "$curr_db_path/$table_name.txt" ]]; then
             echo "couldn't find the table: $table_name at the path: $curr_db_path "
             echo "please note that only one table is allowed we don't current support join quires. please wait for further notice"
             exit 1  
         fi
-    
+        
+        header_file="$curr_db_path/.$table_name.txt"
+        num_fields=$(echo "$header_file" | awk -F":" '{print NF}')
+        while IFS= read -r line; do
+            for i in $(seq 1 $num_fields); do
+                field_header=$(echo "$line" | cut -d":" -f"$i")
+                full_header="$full_header$field_header:"
+            done
+        done < "$header_file"
     else
-
         if ! [[ where_index -eq -1 ]]; then
             echo "Error: No from keyword."
             exit 1
@@ -617,17 +675,31 @@ select_table(){
             select_statment=$(get_words_from_to "1" "$semicolon_index" "$sql_command")
             num_fields=$(echo "$select_statment" | awk -F"," '{print NF}')
             select_table="$HOME/database_temp/select.txt"
-            touch "$select_table"
+            > "$select_table"
 
             for i in $(seq 1 $num_fields); do
                 field=$(echo "$select_statment" | cut -d"," -f"$i")
-                if [[ $i -eq $num_fields ]]; then
-                    python3 -c  "print(eval('$field'))" >> "$select_table"
+                header=$header$field
+                output=$(python3 -c  "
+try:
+    result = eval('$field')
+    print(result)
+except Exception as e:
+    print(f'Error: {e}')
+                    ")
+                # Check if the output contains "Error:"
+                if [[ $output == Error:* ]]; then
+                    echo "An exception occurred: $output"
+                    exit 1
                 else
-                    python3 -c  "print(eval('$field'), end=':')" >> "$select_table" 
+                    if [[ $i -eq $num_fields ]]; then
+                        echo "$output"  >> "$select_table"
+                    else
+                        echo -n "$output:" >> "$select_table"
+                    fi
                 fi
             done
-            cat "$select_table"
+            print_table "$header" "$select_table" "$full_header"
             rm "$select_table"
         fi
     fi
@@ -639,37 +711,88 @@ select_table(){
         fi
 
         expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
+        echo "1: $expression"
 
-        expression=$(replace_column_name "$expression" "$curr_db_path/.$table_name.txt")
-        
+        expression=$(replace_column_name " $expression " "$curr_db_path/.$table_name.txt")
+        echo "2: $expression"
         table_file="$HOME/database_temp/table.txt"
-        touch "$table_file"
-
+        > "$table_file"
 
         evaluate_expression "$expression" "$curr_db_path/$table_name.txt" "$table_file"
+        cat "$table_file"
+        
 
         select_sql=" $sql_command "
 
         select_statment=$(get_words_from_to "1" "$from_index" "$select_sql")
-
+        echo "5: $select_statment"
 
         select_replaced=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
+        echo "6: $select_replaced"
 
+        visulize_table "$select_replaced" "$table_file" "$select_statment" "$full_header"
+        rm "$table_file"
+    
+    else
+        if ! [[ from_index -eq -1 ]]; then
+            select_sql=" $sql_command "
 
-        visulize_table "$select_replaced" "$table_file" "$select_statment"
+            select_statment=$(get_words_from_to "1" "$from_index" "$select_sql")
+
+            select_replaced=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
+
+            visulize_table "$select_replaced" "$curr_db_path/$table_name.txt" "$select_statment" "$full_header"
+        fi
       
     fi
     
 }
 
-visulize_table(){
-    expression="$1"   # The expression, e.g., "col1 + col2 > 10"
-    file="$2"         # The file to process, e.g., "file.csv"
+evaluate_expression2() {
+    local expression="$1"
+    expression="${expression//\"/\\\"}" # replace " with \"
+    # echo "4: $expression"
+    # Python code to evaluate the expression
+    result=$(python3 - <<EOF
+from datetime import datetime
 
+# Function to parse and compare dates
+def replace_dates(expression):
+    def parse_date(match):
+        date_str = match.group(0).strip('\"')
+        return f'datetime.strptime(\"{date_str}\", \"%Y-%m-%d\").date()'
+
+    import re
+
+    return re.sub(r'\"\d{4}-\d{1,2}-\d{1,2}\"', parse_date, expression)
+
+# Replace dates and evaluate the expression
+expression = "$expression"
+try:
+    expression = replace_dates(expression)
+    result = eval(expression)
+    print(result)
+except Exception as e:
+    print(f"Error: {e}")
+EOF
+)
+    result="${result//\{/}" # remove {
+    result="${result//\}/}" # remove }
+    # Return the result
+    echo "$result"
+}
+
+visulize_table(){
+    local expression="$1"   # The expression, e.g., "col1 + col2 > 10"
+    local main_table="$2"         # The file to process, e.g., "file.csv"
+    if [[ $expression == *\"* || $expression == *\'* ]]; then
+        echo "Error: We don't currently support non-standard column names. please wait for further notice"
+        exit 1
+    fi
     # echo "" | sed "s/\b$word\b/$replacement/g"
     temp_file="$HOME/database_temp/temp87.txt"
-    touch "$file"
-
+    > "$temp_file"
+    # echo "$expression"
     awk -v expr="$expression" -v file="$temp_file" '
     BEGIN {
         FS = ":"  # column delimeter
@@ -682,33 +805,55 @@ visulize_table(){
         # Replace column names with their respective values
         for (i = 1; i <= NF; i++) {
             gsub("col" i, $i, eval_expr)
-            # replace "=" with "==" because the first is an assignment operand
-            gsub(" = ", " == ", eval_expr)
         }
+        # replace "=" with "==" because the first is an assignment operand
+        gsub(" = ", " == ", eval_expr)
         # print "_____________________"
         expr_string= eval_expr 
         print expr_string >> file
 
     }
-    ' "$file"
+    ' "$main_table"
 
-    
+    counter=1
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
     select_table="$HOME/database_temp/select.txt"
-    touch "$select_table"
+    > "$select_table"
     while IFS= read -r line; do
+\
         for i in $(seq 1 $num_fields); do
             field=$(echo "$line" | cut -d"," -f"$i")
-            if [[ $i -eq $num_fields ]]; then
-                python3 -c  "print(eval('$field'))" >> "$select_table"
+            trimmed_field=$(echo "$field" | tr -d ' ')
+            echo "field: $field"
+            if [[ $trimmed_field == "*" ]]; then
+                if [[ $i -eq $num_fields ]]; then
+                    awk -v line="$counter" 'NR == line' "$main_table" | tr '\\\"' ' ' >> "$select_table"
+                    # cat "$select_table"
+                else
+                    awk -v line="$counter" 'NR == line { printf "%s", $0 }' $main_table | tr '\\\"' ' ' >> "$select_table" 
+                fi
+
             else
-                python3 -c  "print(eval('$field'), end=':')" >> "$select_table" 
+                parse_expr=$(evaluate_expression2 "$field")
+                
+                if [[ $parse_expr == Error:* ]]; then
+                    echo "An exception occurred: $parse_expr"
+                    rm "$temp_file"
+                    rm "$select_table"
+                    exit 1
+                else
+                    if [[ $i -eq $num_fields ]]; then
+                        echo "$parse_expr"  >> "$select_table"
+                    else
+                        echo -n "$parse_expr:" >> "$select_table"
+                    fi
+                fi
             fi
         done
+        counter=$((counter+1))
     done < "$temp_file"
     rm "$temp_file"
-    rm "$file"
-    print_table "$3" "$select_table"
+    print_table "$3" "$select_table" "$4"
     rm "$select_table"
 }
 
@@ -719,9 +864,9 @@ print_row() {
     IFS=':' read -r -a columns <<< "$row"
     for ((i = 0; i < ${#columns[@]}; i++)); do
         if ((i == 0)); then
-            printf "%-15s" "${columns[i]}"
+            printf "%-20s" "${columns[i]}"
         else
-            printf ":%-15s" "${columns[i]}"
+            printf ":%-20s" "${columns[i]}"
         fi
     done
     echo
@@ -739,15 +884,30 @@ print_table(){
 
     # Define the table header and data
     header=""
-
+    full_header="$3"
     num_fields=$(echo "$header_table" | awk -F"," '{print NF}')
 
     for i in $(seq 1 $num_fields); do
         field=$(echo "$header_table" | cut -d"," -f"$i")
-        if [[ $i -eq $num_fields ]]; then
-            header="$header$field"
+        trimmed_field=$(echo "$field" | tr -d ' ')
+
+        if [[ $trimmed_field == "*" ]]; then
+            num_header_fields=$(echo "$full_header" | awk -F":" '{print NF}')
+            for j in $(seq 1 $num_header_fields); do
+                field=$(echo "$full_header" | cut -d":" -f"$j")
+
+                if [[ $j -eq $num_header_fields && $i -eq $num_fields ]]; then
+                    header="$header$field"
+                else
+                    header="$header$field:"
+                fi
+            done
         else
-            header="$header$field:"
+            if [[ $i -eq $num_fields ]]; then
+                header="$header$field"
+            else
+                header="$header$field:"
+            fi
         fi
     done
 
