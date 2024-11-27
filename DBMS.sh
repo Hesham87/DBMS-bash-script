@@ -1020,17 +1020,11 @@ function insert_with_test() {
     for ((i = 0; i < ${#table_columns[@]}; i++)); do
         record[i]=""
     done
-    result=0
     # Validate each provided column and value
     for ((i = 0; i < ${#column_array[@]}; i++)); do
-        if [[ $result -eq -1 ]]; then
-            exit 1
-        else
-            echo "$result"
-        fi
         local column="${column_array[$i]}"
         local value="${value_array[$i]}"
-
+        echo "i: $i"
         # Find column metadata
         local column_index=-1
         for ((j = 0; j < ${#table_columns[@]}; j++)); do
@@ -1049,10 +1043,10 @@ function insert_with_test() {
         local metadata_line=$(sed -n "$((column_index + 1))p" "$meta_path")
         local datatype=$(echo "$metadata_line" | awk -F':' '{print $2}')
         local size=$(echo "$metadata_line" | awk -F':' '{print $3}' | sed 's/[^0-9]//g')
-        local primary_key=$(echo "$metadata_line" | awk -F':' '{print $4}')
+        # local primary_key=$(echo "$metadata_line" | awk -F':' '{print $4}')
         local not_null=$(echo "$metadata_line" | awk -F':' '{print $5}')
         local unique=$(echo "$metadata_line" | awk -F':' '{print $6}')
-
+        echo "m:$metadata_line dt:$datatype s:$size pk:$primary_key nn:$not_null u:$unique"
         # Validate value against metadata
         case $datatype in
             int)
@@ -1062,24 +1056,45 @@ function insert_with_test() {
                 fi
                 ;;
             char)
-                if ! [[ "$value" =~ ^[a-zA-Z0-9_\ ]+$ ]]; then
-                    echo "Error: Value '$value' for column '$column' must be a valid string."
-                    return 1
-                fi
                 if [[ "${#value}" -gt "$size" ]]; then
                     echo "Error: Value '$value' for column '$column' exceeds size limit ($size)."
                     return 1
                 fi
+                value="\""$value"\""
                 ;;
             date)
                 if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
                     echo "Error: Value '$value' for column '$column' must be in YYYY-MM-DD format."
+                    return 1                 
+                fi
+                # Extract the month and day from the date value
+                local month=$(echo "$value" | cut -d'-' -f2)
+                local day=$(echo "$value" | cut -d'-' -f3)
+                # Validate the month and day ranges
+                if ((month < 1 || month > 12)); then
+                    echo "Error: Month '$month' for column '$column' must be between 1 and 12."
                     return 1
                 fi
-                if ! date -d "$value" &>/dev/null; then
-                    echo "Error: Value '$value' for column '$column' is not a valid date."
+                if ((day < 1 || day > 31)); then
+                    echo "Error: Day '$day' for column '$column' must be between 1 and 31."
                     return 1
                 fi
+                # # Optional: Check if the date is a valid date using the `date` command
+                # if ! date -d "$value" &>/dev/null; then
+                #     echo "Error: Value '$value' for column '$column' is not a valid date."
+                #     return 1 
+                # fi 
+                # ;;
+ 
+                # if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                #     echo "Error: Value '$value' for column '$column' must be in YYYY-MM-DD format."
+                #     return 1
+                # fi
+                # if ! date -d "$value" &>/dev/null; then
+                #     echo "Error: Value '$value' for column '$column' is not a valid date."
+                #     return 1
+                # fi
+                value="\""$value"\""
                 ;;
             *)
                 echo "Error: Unknown datatype '$datatype' for column '$column'."
@@ -1087,34 +1102,32 @@ function insert_with_test() {
                 ;;
         esac
         # Check constraints
-        if [[ "$primary_key" -eq 1 ]]; then
-            # Primary key: Cannot be null and must be unique
-            echo "is priamry $primary_key"
-            if [[ -z "$value" ]]; then
-                echo "Error: Column '$column' is a primary key and cannot be null."
-                return 1
-            fi
-            # awk -F':' -v val="$value" -v col="$((column_index + 1))" '{if ($col == val) exit 1}' "$table_path")
-            col=$((column_index + 1))
-            num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
+        # if [[ "$primary_key" -eq 1 ]]; then
+        #     # Primary key: Cannot be null and must be unique
+        #     echo "is priamry $primary_key"
+        #     if [[ -z "$value" ]]; then
+        #         echo "Error: Column '$column' is a primary key and cannot be null."
+        #         return 1
+        #     fi
+        #     # awk -F':' -v val="$value" -v col="$((column_index + 1))" '{if ($col == val) exit 1}' "$table_path")
+        #     col=$((column_index + 1))
+        #     num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
 
-            while IFS= read -r line; do
-                for i in $(seq 1 $num_fields); do
-                    field=$(echo "$line" | cut -d":" -f"$col")
-                    if [[ $field -eq $value ]]; then
-                        echo "________exiting"
-                        exit 1
-                    fi
-                done
-            done < "$table_path"
+        #     while IFS= read -r line; do
+        #         field=$(echo "$line" | cut -d":" -f"$col")
+        #         if [[ $field -eq $value ]]; then
+        #             echo "Error: Primary key constraint violated for column '$col'. Value '$value' already exists."
+        #             exit 1
+        #         fi
+        #     done < "$table_path"
 
-            echo "value $value, $val,col $col, column_index $column_index, result $result"
-            if [[ $? -eq -1 ]]; then
-                echo "Error: Primary key constraint violated for column '$column'. Value '$value' already exists."
-                return 1
-            fi
+        #     echo "value $value, $val,col $col, column_index $column_index, result $result"
+        #     if [[ $? -eq -1 ]]; then
+        #         echo "Error: Primary key constraint violated for column '$column'. Value '$value' already exists."
+        #         return 1
+        #     fi
 
-        fi
+        # fi
 
         if [[ "$not_null" -eq 1 ]]; then
             # Not null: Value cannot be empty
@@ -1128,14 +1141,31 @@ function insert_with_test() {
         if [[ "$unique" -eq 1 ]]; then
             echo "is unique"
             # Unique constraint: Value must not already exist
-            local unique_exists=$(awk -F':' -v val="$value" -v col="$((column_index + 1))" 'NR>1 {if ($col == val) exit 1}' "$table_path")
-            if [[ $? -eq 1 ]]; then
-                echo "Error: Unique constraint violated for column '$column'. Value '$value' already exists."
-                return 1
-            fi
+            col_i=$((column_index + 1))
+            # local unique_exists=$(awk -F':' -v val="$value" -v col=$col_i 'NR>1 {if ($col == val) exit 1}' "$table_path")
+            num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
+
+            while IFS= read -r line; do
+                field=$(echo "$line" | cut -d":" -f"$col_i")
+                if [[ $datatype == "char" || $datatype == "date" ]]; then
+                    field_length=$((${#field}-1))
+                    field=${field:0:field_length}
+                    echo "++++++++++$field"
+                    if [[ $field == $value ]]; then
+                    echo "Error: unique constraint violated for column '$col'. Value '$value' already exists."
+                    exit 1
+                    fi
+                else
+                    echo "-----------$field"
+                    if [[ $field -eq $value ]]; then
+                        echo "Error: unique constraint violated for column '$col'. Value '$value' already exists."
+                        exit 1
+                    fi
+                fi
+            done < "$table_path"
         fi
 
-
+        echo "i: $i"
         # Set value in the record
         record[$column_index]="$value"
     done
