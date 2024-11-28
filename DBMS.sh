@@ -496,30 +496,39 @@ replace_column_name(){
 
 evaluate_expression(){
     expression="$1"   # The expression, e.g., "col1 + col2 > 10"
-    file="$2"         # The file to process, e.g., "file.csv"
-    table="$3"
+    file="$2"         # data table (contains raws)
+    table="$3"        # temporary table to store the values to be shown in select statement
+    update_expr="$4"  # the set clause expression of the update statement
+    col_num="$5"      # the number of the column to be updated in the update expression
 
     # echo "" | sed "s/\b$word\b/$replacement/g"
     temp_file="$HOME/database_temp/temp87.txt"
     > "$temp_file"
-    awk -v expr="$expression" -v file="$temp_file" '
+    update_file="$HOME/database_temp/temp870.txt"
+    > "$update_file"
+    echo "*******************$update_expr"
+    awk -v expr="$expression" -v up_expr="$update_expr" -v up_file="$update_file" -v file="$temp_file" '
     BEGIN {
         FS = ":"  # column delimeter
     }
 
     {
         # Creating a copy of the expression in awk serves to preserve the original expression for reference and reusability.
-        eval_expr = expr  
+        eval_expr = expr
+        eval_up = up_expr  
 
         # Replace column names with their respective values
         for (i = 1; i <= NF; i++) {
             gsub("col" i, $i, eval_expr)
-            # replace "=" with "==" because the first is an assignment operand
-            gsub(" = ", " == ", eval_expr)
+            gsub("col" i, $i, eval_up)
         }
+        # replace "=" with "==" because the first is an assignment operand
+        gsub(" = ", " == ", eval_expr)
+        gsub(" = ", " == ", eval_up)
         # print "_____________________"
         expr_string= eval_expr 
         print expr_string >> file
+        print eval_up >> up_file
 
     }
     ' "$file"
@@ -532,7 +541,27 @@ evaluate_expression(){
         # echo "line: $line"
         # echo "check: $check"
         if [[  $check == "True" ]]; then
-            awk -v n=$counter 'NR==n' "$file" >> "$table"
+            if [[ $table == "delete" ]]; then
+                sed -i "${counter}d" "$file"
+            elif [[ $table == "update" ]]; then
+                new_value=$(awk -v n=$counter 'NR==n' "$update_file")
+                # echo "1: $new_value"
+                new_value=$(python3 -c  "
+try:
+    result = eval('$new_value')
+    print(result)
+except Exception as e:
+    print(f'Error: {e}')
+                    ")
+                # echo "2: $new_value"
+                if [[ $new_value == Error:* ]]; then
+                    echo "An exception occurred: $new_value"
+                    exit 1
+                fi
+                update_row "$6" "$counter" "$col_num" "$new_value"
+            else
+                awk -v n=$counter 'NR==n' "$file" >> "$table"
+            fi
         elif ! [[ $check == "False" ]]; then
             echo "Error: wrong where expression"
             rm "$temp_file"
@@ -543,16 +572,8 @@ evaluate_expression(){
     rm "$temp_file"
 }
 
-select_table(){
-    local curr_db_path="$1"
-    local sql_command="$2"
-
-    check_db_selected "$curr_db_path"
-
-    keywords=("select" "where" "from" "group" "distinct" ";")
-
-    sql_command=$(echo "$sql_command" | tr 'A-Z' 'a-z')  # convert to lower case
-
+command_to_lower_with_spaces(){
+    local sql_command="$1"
     output=""
     in_quotes=0
     skip=0
@@ -578,6 +599,8 @@ select_table(){
                 output+=" / "
             elif [[ "$char" == "{" && $in_quotes -eq 0 ]]; then
                 output+=" { "
+            elif [[ "$char" == "}" && $in_quotes -eq 0 ]]; then
+                output+=" } "
             elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
                 output+=" , " 
             elif [[ "$char" == ">" && ${sql_command:counter:1} == "=" && $in_quotes -eq 0 ]]; then
@@ -592,6 +615,8 @@ select_table(){
                 output+=" < "
             elif [[ "$char" == "=" && $in_quotes -eq 0 ]]; then
                 output+=" = "      
+            elif [[ $in_quotes -eq 0 ]]; then
+                output+=$(echo "$char" | tr 'A-Z' 'a-z')  #convert to lower case
             else
                 output+="$char"
             fi
@@ -599,8 +624,21 @@ select_table(){
             skip=0
         fi
     done <<< "$sql_command"
+    echo "$output"
+}
 
-    sql_command=$output
+select_table(){
+    local curr_db_path="$1"
+    local sql_command="$2"
+
+    check_db_selected "$curr_db_path"
+
+    keywords=("select" "where" "from" "group" "distinct" ";")
+
+    # sql_command=$(echo "$sql_command" | tr 'A-Z' 'a-z')  # convert to lower case
+
+    
+    sql_command=$(command_to_lower_with_spaces "$sql_command")
     # echo "$output"
 
     check_select=$(word_first_index "$sql_command" "select")
@@ -972,18 +1010,213 @@ create_table(){
 
 }
 
-function insert_with_test() {
-    # Define base directory for tables
-    local base_dir="$2"
-    # Parse and clean SQL
-    local sql_command=$(echo "$sql_command" | sed -e 's/INSERT//g' -e 's/INTO//g' -e 's/VALUES//g' | sed -e 's/insert//g' -e 's/into//g' -e 's/values//g')
-    #echo "SQL Line: $sql_command" 
-    # Extract table name and values
-    local table_name=$(echo "$sql_command" | awk -F'[{]' '{gsub(/[ \t]/, "", $1); print $1}')
-    #echo "Extracted Table Name: $table_name"
-    local values=$(echo "$sql_command" | awk -F'[{]' '{print $3}' | sed 's/[};]//g')
-    #echo "Extracted values: $values"
+update_row() {
+    local table_name="$1"
+    local row_number="$2"
+    local column_index="$3"
+    local new_value="$4"
 
+    # Define paths for the table and metadata
+    local base_dir="$HOME/Databases/students"
+    local table_path="$base_dir/$table_name.txt"
+    local meta_path="$base_dir/.${table_name}.txt"
+    local metadata_line=$(sed -n "$((column_index + 1))p" "$meta_path")
+    local size=$(echo "$metadata_line" | awk -F':' '{print $3}' | sed 's/[^0-9]//g')
+    # Check if table and metadata exist
+    if [[ ! -f "$table_path" || ! -f "$meta_path" ]]; then
+        echo "Error: Table or metadata not found. Table path: $table_path, Metadata path: $meta_path"
+        return 1
+    fi
+
+    # Step 1: Extract column names and datatypes from metadata
+    local table_columns=($(awk -F':' '{print $1}' "$meta_path"))
+    local table_datatypes=($(awk -F':' '{print $2}' "$meta_path"))
+    local table_constraints=($(awk -F':' '{print $4, $5, $6}' "$meta_path"))  # Primary, Not Null, Unique
+    
+    # Step 2: Check if the row_number is valid (within bounds)
+    local row_count=$(wc -l < "$table_path")
+    if ((row_number <= 0 || row_number > row_count)); then
+        echo "Error: Invalid row number. Table only has $row_count rows."
+        return 1
+    fi
+
+    # Step 3: Get the specific row from the table (line corresponding to row_number)
+    local row=$(sed -n "${row_number}p" "$table_path")
+    IFS=':' read -ra row_values <<< "$row"  # Split the row based on ':'
+    echo "size is $size"
+    # Step 4: Validate the new value based on datatype
+    local datatype="${table_datatypes[$((column_index-1))]}"
+    case $datatype in
+        int)
+            if ! [[ "$new_value" =~ ^[0-9]+$ ]]; then
+                echo "Error: '$new_value' is not a valid integer for column '${table_columns[$((column_index-1))]}'."
+                return 1
+            fi
+            ;;
+        char)
+            # Ensure the value is wrapped in double quotes for 'char' column
+            if ! [[ "$new_value" =~ ^[a-zA-Z0-9_\ ]+$ ]]; then
+                echo "Error: '$new_value' is not a valid string for column '${table_columns[$((column_index-1))]}'."
+                return 1
+            fi
+            if [[ "${#new_value}" -gt "$size" ]]; then
+                    echo "Error: Value '$new_value' for column '${table_columns[$((column_index-1))]}' exceeds size limit ($size)."
+                    return 1
+                fi
+            # Make sure it's in double quotes for 'char' (e.g., "Sara")
+            new_value="\""$new_value"\""
+            ;;
+        date)
+            # Validate date format (YYYY-MM-DD)
+                if ! [[ "$new_value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                    echo "Error: Value '$new_value' for column '${table_columns[$((column_index-1))]}' must be in YYYY-MM-DD format."
+                    return 1                 
+                fi
+                # Extract the month and day from the date value
+                local month=$(echo "$new_value" | cut -d'-' -f2)
+                local day=$(echo "$new_value" | cut -d'-' -f3)
+                # Validate the month and day ranges
+                if ((month < 1 || month > 12)); then
+                    echo "Error: Month '$month' for column '${table_columns[$((column_index-1))]}' must be between 1 and 12."
+                    return 1
+                fi
+                if ((day < 1 || day > 31)); then
+                    echo "Error: Day '$day' for column '${table_columns[$((column_index-1))]}' must be between 1 and 31."
+                    return 1
+                fi
+                new_value="\""$new_value"\""
+                ;;
+
+        *)
+            echo "Error: Unknown datatype '$datatype' for column '${table_columns[$((column_index-1))]}'."
+            return 1
+            ;;
+    esac
+
+    # Step 5: Check constraints (Primary Key and Unique)
+    local primary_key="${table_constraints[$((column_index-1))]}"
+    local not_null="${table_constraints[$((column_index))]}"
+    local unique="${table_constraints[$((column_index+1))]}"
+
+
+    # Unique constraint check (only if it's not a primary key)
+    if [[  "$unique" -eq 1 ]]; then
+        # Loop through each row in the table to check for duplicate values
+        echo "unique"
+        local col_i=$((column_index ))
+        echo "$col_i"
+        while IFS= read -r line; do
+            field=$(echo "$line" | cut -d":" -f"$col_i")
+            if [[ $datatype == "char" || $datatype == "date" ]]; then
+                value_length=$((${#new_value}-1))
+                value_temp=${new_value:0:value_length}
+                if [[ $field == $new_value ]]; then
+                echo "Error: unique constraint violated for column '${table_columns[$((column_index-1))]}'. Value '$new_value' already exists."
+                exit 1
+                fi
+            else
+                if [[ $field -eq $new_value ]]; then
+                    echo "Error: unique constraint violated for column '${table_columns[$((column_index-1))]}'. Value '$new_value' already exists."
+                    exit 1
+                fi
+            fi
+        done < "$table_path"
+    fi
+
+    # Step 6: Check Not Null constraint
+    if [[ "$not_null" -eq 1 && -z "$new_value" ]]; then
+        echo "Error: Column '${table_columns[$((column_index-1))]}' cannot be NULL."
+        return 1
+    fi
+
+    # Step 7: Update the row by replacing the column value
+    row_values[$((column_index-1))]="$new_value"
+    
+    # Step 8: Rebuild the updated row and write it back to the table
+    local updated_row=$(IFS=':'; echo "${row_values[*]}")
+
+    # Use sed to replace the old row with the new updated row
+    sed -i "${row_number}s/.*/$updated_row/" "$table_path"
+
+    echo "Row $row_number updated successfully in '$table_name'."
+}
+
+function insert_with_test() {
+    local base_dir="$2"
+
+    sql_command=$(command_to_lower_with_spaces "$1")
+    into_word=$(echo "$sql_command" | awk '{print $2}') # get second word
+    if ! [[ $into_word == "into" ]]; then
+        echo "excpected into found: $into_word"
+        exit 1
+    fi
+    table_name=$(echo "$sql_command" | awk '{print $3}')
+
+    if ! [[ -f "$base_dir/$table_name.txt" ]]; then
+        echo "table: $table_name doesn't exist in path $base_dir"
+        exit 1
+    fi
+    value_index=$(word_first_index "$sql_command" "values")
+    columns_string=""
+    values_string=""
+    if ! [[ $value_index -eq -1 ]]; then
+        if [[ $value_index -eq -2 ]]; then
+            echo "more than one values keyword entered."
+            exit 1
+        fi
+        columns_string=$(get_words_from_to "3" "$value_index" "$sql_command")
+        echo "11: $columns_string"
+        first_word=$(echo "$columns_string" | awk '{print $1}')
+
+        if ! [[ $first_word == "{" ]];then
+            echo "openning brace error."
+            exit 1
+        fi
+
+        last_word=$(echo "$columns_string" | awk '{ print $NF}')
+
+        echo "13: $last_word"
+
+        if ! [[ $last_word == "}" ]]; then
+            echo "closing brace error."
+            exit 1
+        fi
+
+        semicolon_index=$(word_first_index "$sql_command" ";")
+        values_string=$(get_words_from_to "$value_index" "$semicolon_index"  "$sql_command")
+        echo "12: $values_string"
+        first_word=$(echo "$values_string" | awk '{print $1}')
+
+        if ! [[ $first_word == "{" ]];then
+            echo "openning brace error."
+            exit 1
+        fi
+
+        last_word=$(echo "$values_string" | awk '{print $NF}')
+
+        if ! [[ $last_word == "}" ]]; then
+            echo "closing brace error."
+            exit 1
+        fi
+    else
+        echo "no value keyword found."
+        exit 1
+    fi
+    
+    values=$(braces_check "$sql_command")  # $(....) excutes in a subshell so exit doesn't terminate the whole script
+    
+    # Check for the exit status of the function
+    if [[ $? -ne 0 ]]; then
+        echo "$values"
+        exit 1
+    fi
+
+    # if ! echo "$sql_command" | grep -iqP "^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+[a-zA-Z0-9_]+[[:space:]]*\{[a-zA-Z0-9_,[:space:]]+\}[[:space:]]+VALUES[[:space:]]*\{[a-zA-Z0-9_,[:space:]]+\}[[:space:]]*;$"; then
+    #     echo "Error: Invalid INSERT syntax. Correct format: INSERT INTO table_name (columns) VALUES (values);"
+    #     return 1
+    # fi
+    local values=$(echo "$values_string" | awk '{for (i=2; i<NF; i++) printf $i " "; print ""}')
+    echo "values: $values"
     # Define paths for table and metadata
     local table_path="$base_dir/$table_name.txt"
     local meta_path="$base_dir/.${table_name}.txt"
@@ -993,13 +1226,13 @@ function insert_with_test() {
         echo "Error: Table or metadata not found in $base_dir. table path : $table_path, meta data : $meta_path"
         return
     fi
-    local columns=$(echo "$sql_command" | awk -F'[{]' '{print $2}' | sed 's/}//g' | xargs)
+    local columns=$(echo "$columns_string" | awk '{for (i=2; i<NF; i++) printf $i " "; print ""}')
+    echo "columns: $columns"
     local values=$(echo "$sql_command" | awk -F'[{]' '{print $3}' | sed 's/[};]//g' | xargs)
-    echo "columns is : $columns , values is : $values"
+
     # Count the number of columns and values
     local num_columns=$(echo "$columns" | awk -F',' '{print NF}')
     local num_values=$(echo "$values" | awk -F',' '{print NF}')
-    echo "num columns is : $num_columns , num values is : $num_values"
     # Validate number of columns and values
     if ((num_columns != num_values)); then
         echo "Error: Number of columns ($num_columns) does not match number of values ($num_values)."
@@ -1024,7 +1257,8 @@ function insert_with_test() {
     for ((i = 0; i < ${#column_array[@]}; i++)); do
         local column="${column_array[$i]}"
         local value="${value_array[$i]}"
-        echo "i: $i"
+        column=$(echo "$column" | xargs)
+        value=$(echo "$value" | xargs)
         # Find column metadata
         local column_index=-1
         for ((j = 0; j < ${#table_columns[@]}; j++)); do
@@ -1046,12 +1280,14 @@ function insert_with_test() {
         # local primary_key=$(echo "$metadata_line" | awk -F':' '{print $4}')
         local not_null=$(echo "$metadata_line" | awk -F':' '{print $5}')
         local unique=$(echo "$metadata_line" | awk -F':' '{print $6}')
-        echo "m:$metadata_line dt:$datatype s:$size pk:$primary_key nn:$not_null u:$unique"
         # Validate value against metadata
         case $datatype in
             int)
                 if ! [[ "$value" =~ ^[0-9]+$ ]]; then
                     echo "Error: Value '$value' for column '$column' must be an integer."
+                    return 1
+                elif [[ $value -gt $size ]]; then
+                    echo "Error: value '$value' exceeds the maximum value '$size'"
                     return 1
                 fi
                 ;;
@@ -1079,21 +1315,6 @@ function insert_with_test() {
                     echo "Error: Day '$day' for column '$column' must be between 1 and 31."
                     return 1
                 fi
-                # # Optional: Check if the date is a valid date using the `date` command
-                # if ! date -d "$value" &>/dev/null; then
-                #     echo "Error: Value '$value' for column '$column' is not a valid date."
-                #     return 1 
-                # fi 
-                # ;;
- 
-                # if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-                #     echo "Error: Value '$value' for column '$column' must be in YYYY-MM-DD format."
-                #     return 1
-                # fi
-                # if ! date -d "$value" &>/dev/null; then
-                #     echo "Error: Value '$value' for column '$column' is not a valid date."
-                #     return 1
-                # fi
                 value="\""$value"\""
                 ;;
             *)
@@ -1102,36 +1323,8 @@ function insert_with_test() {
                 ;;
         esac
         # Check constraints
-        # if [[ "$primary_key" -eq 1 ]]; then
-        #     # Primary key: Cannot be null and must be unique
-        #     echo "is priamry $primary_key"
-        #     if [[ -z "$value" ]]; then
-        #         echo "Error: Column '$column' is a primary key and cannot be null."
-        #         return 1
-        #     fi
-        #     # awk -F':' -v val="$value" -v col="$((column_index + 1))" '{if ($col == val) exit 1}' "$table_path")
-        #     col=$((column_index + 1))
-        #     num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
-
-        #     while IFS= read -r line; do
-        #         field=$(echo "$line" | cut -d":" -f"$col")
-        #         if [[ $field -eq $value ]]; then
-        #             echo "Error: Primary key constraint violated for column '$col'. Value '$value' already exists."
-        #             exit 1
-        #         fi
-        #     done < "$table_path"
-
-        #     echo "value $value, $val,col $col, column_index $column_index, result $result"
-        #     if [[ $? -eq -1 ]]; then
-        #         echo "Error: Primary key constraint violated for column '$column'. Value '$value' already exists."
-        #         return 1
-        #     fi
-
-        # fi
-
         if [[ "$not_null" -eq 1 ]]; then
             # Not null: Value cannot be empty
-            echo "is not null"
             if [[ -z "$value" ]]; then
                 echo "Error: Column '$column' cannot be null."
                 return 1
@@ -1139,33 +1332,28 @@ function insert_with_test() {
         fi
 
         if [[ "$unique" -eq 1 ]]; then
-            echo "is unique"
             # Unique constraint: Value must not already exist
             col_i=$((column_index + 1))
-            # local unique_exists=$(awk -F':' -v val="$value" -v col=$col_i 'NR>1 {if ($col == val) exit 1}' "$table_path")
             num_fields=$(echo "$table_path" | awk -F":" '{print NF}')
 
             while IFS= read -r line; do
                 field=$(echo "$line" | cut -d":" -f"$col_i")
                 if [[ $datatype == "char" || $datatype == "date" ]]; then
-                    field_length=$((${#field}-1))
-                    field=${field:0:field_length}
-                    echo "++++++++++$field"
+                    value_length=$((${#value}-1))
+                    value_temp=${value:0:value_length}
                     if [[ $field == $value ]]; then
-                    echo "Error: unique constraint violated for column '$col'. Value '$value' already exists."
+                    echo "Error: unique constraint violated for column '$column'. Value '$value' already exists."
                     exit 1
                     fi
                 else
-                    echo "-----------$field"
                     if [[ $field -eq $value ]]; then
-                        echo "Error: unique constraint violated for column '$col'. Value '$value' already exists."
+                        echo "Error: unique constraint violated for column '$column'. Value '$value' already exists."
                         exit 1
                     fi
                 fi
             done < "$table_path"
         fi
 
-        echo "i: $i"
         # Set value in the record
         record[$column_index]="$value"
     done
@@ -1190,6 +1378,123 @@ function insert_with_test() {
     echo "Record inserted successfully into '$table_name'."
  
 }
+
+delete_from(){
+    local sql_command="$1"
+    local db_path="$2"
+    local tb_name="$3"
+    sql_command=$(command_to_lower_with_spaces "$sql_command")
+    where_index=$(word_first_index "$sql_command" "where")
+
+    if ! [[ where_index -eq -1 ]]; then
+        if ! [[ where_index -eq -2 ]]; then
+            semicolon_index=$(word_first_index "$sql_command" ";")
+            where_statment=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
+            where_statment=$(replace_column_name "$where_statment" "$db_path/.$tb_name.txt")
+            evaluate_expression "$where_statment" "$db_path/$tb_name.txt" "delete"
+        else
+            echo "Error: multiple Where keyword detected."
+            exit 1
+        fi  
+    else
+        fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
+        if ! [[ fourth_word == ";" ]]; then
+            echo "Error expected ; found: $fourth_word"
+            exit 1;
+        fi
+        > "$db_path/$tb_name.txt"
+    fi
+
+}
+
+update_tb(){
+    local base_dir="$curr_db_path"
+    check_db_selected "$base_dir"
+
+    # Parse and clean SQL
+    # Clean and parse the SQL command
+    local sql_command="$1"
+
+    # Clean and parse the SQL query to make it case-insensitive
+    local sql_command_cleaned=$(command_to_lower_with_spaces "$sql_command")
+
+    # Extract table name, columns, values, and WHERE condition
+    local table_name=$(echo "$sql_command_cleaned" | awk '{print $2}') # get second word
+    if [[ -f "$base_dir/$table_name" ]]; then
+        echo "Error: table: $table_name doesn't exist at path: $base_dir"
+        exit 1
+    fi
+    local set_word=$(echo "$sql_command_cleaned" | awk '{print $3}') # get second word
+
+    if [[ set_word == "set" ]]; then
+        echo "Error: expected set keyword found: $set_word"
+        exit 1
+    fi
+
+    local where_index=$(word_first_index "$sql_command_cleaned" "where")
+    local semicolon_index=$(word_first_index "$sql_command_cleaned" ";")
+    local where_statment=""
+    local set_clause=""
+    if ! [[ $where_index -eq -1 ]]; then
+        if ! [[ $where_index -eq -2 ]]; then
+            if [[ $where_index -lt 3 ]]; then
+                echo "Error: where is placed before set"
+                exit 1
+            fi
+            set_clause=$(get_words_from_to "3" "$where_index" "$sql_command_cleaned")
+            set_clause=$(replace_column_name "$set_clause" "$base_dir/.$table_name.txt")
+
+            column_name=$(echo "$set_clause" | awk '{print $1}') # get first word
+            if ! [[ ${column_name:0:3} == "col" ]]; then
+                echo "excpected attribute name found: ${column_name:0:3}"
+                exit 1
+            fi
+            column_number_length=$((${#column_name} - 3))
+            column_number=${column_name:3:column_number_length}
+
+            equal_op=$(echo "$set_clause" | awk '{print $2}')
+            if ! [[ $equal_op == "=" ]]; then
+                echo "excpected \"=\" found: $equal_op"
+                exit 1
+            fi
+
+            expression=$(echo "$set_clause" | awk '{for (i=3; i<=NF; i++) printf $i " "; print ""}') # -f3- gets from the third word onwards.
+            echo "------------------$expression"
+
+            where_statment=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command_cleaned")
+            where_statment=$(replace_column_name "$where_statment" "$base_dir/.$table_name.txt")
+            evaluate_expression "$where_statment" "$base_dir/$table_name.txt" "update" "$expression" "$column_number" "$table_name"
+        else
+            echo "Error: more than one where keyword detected."
+            exit 1
+        fi  
+    else
+
+        set_clause=$(get_words_from_to "3" "$semicolon_index" "$sql_command_cleaned")
+        set_clause=$(replace_column_name "$set_clause" "$base_dir/.$table_name.txt")
+
+        column_name=$(echo "$set_clause" | awk '{print $1}') # get first word
+        if ! [[ ${column_name:0:3} == "col" ]]; then
+            echo "excpected attribute name found: ${column_name:0:3}"
+            exit 1
+        fi
+        column_number_length=$((${#column_name} - 3))
+        column_number=${column_name:3:column_number_length}
+
+        equal_op=$(echo "$set_clause" | awk '{print $2}')
+        if ! [[ $equal_op == "=" ]]; then
+            echo "excpected \"=\" found: $equal_op"
+            exit 1
+        fi
+
+        expression=$(echo "$set_clause" | awk '{for (i=3; i<=NF; i++) printf $i " "; print ""}') # -f3- gets from the third word onwards.
+        echo "==============$expression----------$set_clause"
+
+        evaluate_expression "1 == 1" "$base_dir/$table_name.txt" "update" "$expression" "$column_number" "$table_name"
+    fi 
+}
+
+
 curr_db_path=""
 
 
@@ -1254,6 +1559,28 @@ while true; do
             ;;
         insert)
             insert_with_test "$sql_command" "$curr_db_path"
+            ;;
+        delete)
+            type=$(echo "$sql_command" | awk '{print $2}') # get second word
+            type=$(echo "$type" | tr 'A-Z' 'a-z')    #convert to lower case
+
+            if [[ "$type" == "from" ]]; then   #-eq is used for integer comparison only
+                check_db_selected "$curr_db_path"
+                table_name=$(echo "$sql_command" | awk '{print $3}') # get third word
+                table_name=$(echo "$table_name" | tr 'A-Z' 'a-z')    #convert to lower case
+                if ! [[ -e "$curr_db_path/$table_name.txt" ]]; then
+                    echo "Error: No such table $table_name at path: $curr_db_path"
+                    exit 1
+                else
+                    delete_from "$sql_command" "$curr_db_path" "$table_name"
+                fi
+            else
+                echo "unsupported type $type"
+            fi
+
+            ;;
+        update)
+            update_tb "$sql_command"
             ;;
         show)
 
