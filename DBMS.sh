@@ -967,8 +967,6 @@ EOF
 # I realised later that it processed so much information about the select clause of the select command
 # For example it handles the select salry*2 part of the select command.
 # It takes as an input the select clause of the select command and the table containing the data to show.
-# An unhandled error is that when an intiger field is null and you preform arithmatic op on it it will show 0.
-# And if a field is named False it will show null. saw it 23 pm 29 Nov ;-;
 # CREATED BY HESHAM BASSIOUNY. 
 visulize_table(){
     local expression="$1"   # The expression, e.g., "col1 + col2 > 10"
@@ -998,7 +996,7 @@ visulize_table(){
                 
             }
             else if(eval_expr ~ "col" i){
-                gsub("col" i, "-A_null_value", eval_expr)
+                gsub("col" i, "A_null_value", eval_expr)
             }
             # print "2: " i " : " $i ": " eval_expr
         }
@@ -1010,7 +1008,7 @@ visulize_table(){
 
     }
     ' "$main_table"
-    # cat "$temp_file"
+
     counter=1
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
     select_table="$HOME/database_temp/select.txt"
@@ -1023,19 +1021,14 @@ visulize_table(){
             if [[ $trimmed_field == "*" ]]; then
                 if [[ $i -eq $num_fields ]]; then
                     awk -v line="$counter" 'NR == line' "$main_table" | tr '\\\"' ' ' >> "$select_table"
-                    # cat "$select_table"
                 else
                     awk -v line="$counter" 'NR == line { printf "%s", $0 }' $main_table | tr '\\\"' ' ' >> "$select_table" 
                 fi
 
             else
                 parse_expr=""
-                if [[ $field != "" ]]; then
+                if [[ ! $field =~ "A_null_value" ]]; then
                     parse_expr=$(evaluate_expression2 "$field")
-                    # echo "$parse_expr"
-                    if [[ $parse_expr == "False" ]]; then
-                        parse_expr=""
-                    fi
                 fi
                 if [[ $parse_expr == Error:* ]]; then
                     echo "An exception occurred: $parse_expr"

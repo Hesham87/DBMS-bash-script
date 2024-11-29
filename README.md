@@ -32,8 +32,6 @@ create table employees(
 - **Note**: Any string or date must be placed between double quotes "".
 
 **Important:** Avoid inserting placing a null ("") in the where clause as this will not show any data.
-**Important:** Arithmatic operations on a field containing null. will treat null as a 0. This issue will be solved soon.
-**Important:** If a string field has only the word "False" case sensitive with no spaces before or after it will result in it not being show in the output of the select statement. This issue will be solved soon.
 
 #### Examples:
 ```sql
