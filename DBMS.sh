@@ -556,7 +556,7 @@ evaluate_expression(){
     > "$temp_file"
     update_file="$HOME/database_temp/temp870.txt"
     > "$update_file"
-    echo "*******************$update_expr"
+    # echo "*******************$update_expr"
     awk -v expr="$expression" -v up_expr="$update_expr" -v up_file="$update_file" -v file="$temp_file" '
     BEGIN {
         FS = ":"  # column delimeter
@@ -597,8 +597,8 @@ evaluate_expression(){
         # line="${line//\"/\\\"}"
         # echo "3 {expression}: $line"
         check=$(evaluate_expression2 "$line")
-        echo "line: $line"
-        echo "check: $check"
+        # echo "line: $line"
+        # echo "check: $check"
         if [[  $check == "True" ]]; then
             if [[ $table == "delete" ]]; then
                 sed -i "${counter}d" "$file"
@@ -1252,7 +1252,7 @@ function insert_with_test() {
             exit 1
         fi
         columns_string=$(get_words_from_to "3" "$value_index" "$sql_command")
-        echo "11: $columns_string"
+        # echo "11: $columns_string"
         first_word=$(echo "$columns_string" | awk '{print $1}')
 
         if ! [[ $first_word == "{" ]];then
@@ -1262,7 +1262,7 @@ function insert_with_test() {
 
         last_word=$(echo "$columns_string" | awk '{ print $NF}')
 
-        echo "13: $last_word"
+        # echo "13: $last_word"
 
         if ! [[ $last_word == "}" ]]; then
             echo "closing brace error."
@@ -1271,7 +1271,7 @@ function insert_with_test() {
 
         semicolon_index=$(word_first_index "$sql_command" ";")
         values_string=$(get_words_from_to "$value_index" "$semicolon_index"  "$sql_command")
-        echo "12: $values_string"
+        # echo "12: $values_string"
         first_word=$(echo "$values_string" | awk '{print $1}')
 
         if ! [[ $first_word == "{" ]];then
@@ -1297,13 +1297,7 @@ function insert_with_test() {
         echo "$values"
         exit 1
     fi
-
-    # if ! echo "$sql_command" | grep -iqP "^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+[a-zA-Z0-9_]+[[:space:]]*\{[a-zA-Z0-9_,[:space:]]+\}[[:space:]]+VALUES[[:space:]]*\{[a-zA-Z0-9_,[:space:]]+\}[[:space:]]*;$"; then
-    #     echo "Error: Invalid INSERT syntax. Correct format: INSERT INTO table_name (columns) VALUES (values);"
-    #     return 1
-    # fi
     local values=$(echo "$values_string" | awk '{for (i=2; i<NF; i++) printf $i " "; print ""}')
-    echo "values: $values"
     # Define paths for table and metadata
     local table_path="$base_dir/$table_name.txt"
     local meta_path="$base_dir/.${table_name}.txt"
@@ -1314,7 +1308,6 @@ function insert_with_test() {
         return
     fi
     local columns=$(echo "$columns_string" | awk '{for (i=2; i<NF; i++) printf $i " "; print ""}')
-    echo "columns: $columns"
     local values=$(echo "$sql_command" | awk -F'[{]' '{print $3}' | sed 's/[};]//g' | xargs)
 
     # Count the number of columns and values
@@ -1546,7 +1539,7 @@ update_tb(){
             fi
 
             expression=$(echo "$set_clause" | awk '{for (i=3; i<=NF; i++) printf $i " "; print ""}') # -f3- gets from the third word onwards.
-            echo "------------------$expression"
+            # echo "------------------$expression"
 
             where_statment=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command_cleaned")
             where_statment=$(replace_column_name "$where_statment" "$base_dir/.$table_name.txt")
@@ -1575,7 +1568,7 @@ update_tb(){
         fi
 
         expression=$(echo "$set_clause" | awk '{for (i=3; i<=NF; i++) printf $i " "; print ""}') # -f3- gets from the third word onwards.
-        echo "==============$expression----------$set_clause"
+        # echo "==============$expression----------$set_clause"
 
         evaluate_expression "1 == 1" "$base_dir/$table_name.txt" "update" "$expression" "$column_number" "$table_name"
     fi 
