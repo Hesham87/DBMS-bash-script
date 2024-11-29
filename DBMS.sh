@@ -435,8 +435,28 @@ create_db(){
 word_first_index(){
     string="$1"
     key="$2"
-
-    echo "$string" | awk -v word="$key" '
+    output=""
+    in_quotes=0
+    # remove strings and dates from the sql_command
+    while IFS= read -r -n1 char; do
+        if [[ "$char" == '"' ]]; then
+            if [[ $in_quotes -eq 0 ]]; then
+                in_quotes=1
+            else
+                in_quotes=0
+            fi
+            output+="-"
+        elif [[  $in_quotes -eq 0 ]]; then
+            output+="$char"
+        else
+            if [[ "$char" == " " ]]; then
+                output+=" "
+            else
+                output+="-"
+            fi
+        fi
+    done <<< "$string"
+    echo "$output" | awk -v word="$key" '
         {
             word_index = -1
             for (i = 1; i <= NF; i++){ 
@@ -469,28 +489,58 @@ get_words_from_to(){
 replace_column_name(){
     local sql_command="$1"
     file="$2"
-    awk -v sql="$sql_command" '
+    echo "$sql_command" | awk -v file="$file" '
     BEGIN {
-        FS = ":"  # column delimeter
-        command = sql
+        # Read the file and store the first word and its line number in the array
+        counter = 0
+        in_quotes = 0
+        while ((getline line < file) > 0) {
+            counter +=1 
+            split(line, fields, ":");  # Split line and store the value in the array fields
+            keywords[fields[1]] = "col" counter;  # Store the first word with its column code as value
+        }
+        close(file);
     }
-
     {
-        # Creating a copy of the sql in awk serves to preserve the original expression for reference and reusability.  
-        curr_col = " col" NR " "  
-        gsub(" "$1" ", curr_col, command) # \b to replace the column name with col(column number) ex col1, col2, col3...
-
-        # Replace column names with their respective values
-        # for (i = 1; i <= NF; i++) {
-        #     gsub("col" i, $i, command)
-        #     print command
-        # }
-    }
-
-    END{
-        print command
-    }
-    ' "$file"
+        # Loop through each word in the input string
+        for (i = 1; i <= NF; i++) {
+            # check if word is a quote.
+            if ($i == "\""){
+                if (in_quotes == 1){
+                    in_quotes = 0
+                }
+                else{
+                    in_quotes = 1
+                }
+            }
+            else if ($i ~ /^\"/) {
+                # check if a word begins with a quote and doesnt end in a quote.
+                if ($i !~ /\"$/) {
+                    if (in_quotes == 1){
+                        in_quotes = 0
+                    }
+                    else{
+                        in_quotes = 1
+                    }
+                } 
+            }
+            else if ($i ~ /\"$/) {
+                # check if word ends in a quote.
+                if (in_quotes == 1){
+                    in_quotes = 0
+                }
+                else{
+                    in_quotes = 1
+                }
+            }
+            else if (in_quotes == 0){
+                if ($i in keywords) {
+                    $i = keywords[$i];  # Replace the word with its line number
+                }
+            }
+        }
+        print;  # Print the modified string
+    }'
     
 }
 
@@ -519,8 +569,17 @@ evaluate_expression(){
 
         # Replace column names with their respective values
         for (i = 1; i <= NF; i++) {
-            gsub("col" i, $i, eval_expr)
-            gsub("col" i, $i, eval_up)
+            if ($i != ""){
+                gsub("col" i, $i, eval_expr)
+                gsub("col" i, $i, eval_up)
+            }
+            else if(eval_expr ~ "col" i){
+                gsub("col" i, "A_null_value", eval_expr)
+            }
+            else if(eval_up ~ "col" i){
+                eval_up = ""
+            }
+            
         }
         # replace "=" with "==" because the first is an assignment operand
         gsub(" = ", " == ", eval_expr)
@@ -538,21 +597,22 @@ evaluate_expression(){
         # line="${line//\"/\\\"}"
         # echo "3 {expression}: $line"
         check=$(evaluate_expression2 "$line")
-        # echo "line: $line"
-        # echo "check: $check"
+        echo "line: $line"
+        echo "check: $check"
         if [[  $check == "True" ]]; then
             if [[ $table == "delete" ]]; then
                 sed -i "${counter}d" "$file"
             elif [[ $table == "update" ]]; then
                 new_value=$(awk -v n=$counter 'NR==n' "$update_file")
-                # echo "1: $new_value"
-                new_value=$(python3 -c  "
+                if [[ $new_value != "" ]]; then
+                    new_value=$(python3 -c  "
 try:
     result = eval('$new_value')
     print(result)
 except Exception as e:
     print(f'Error: {e}')
                     ")
+                fi
                 # echo "2: $new_value"
                 if [[ $new_value == Error:* ]]; then
                     echo "An exception occurred: $new_value"
@@ -563,7 +623,7 @@ except Exception as e:
                 awk -v n=$counter 'NR==n' "$file" >> "$table"
             fi
         elif ! [[ $check == "False" ]]; then
-            echo "Error: wrong where expression"
+            echo "Error: wrong where expression: $check for line: $line"
             rm "$temp_file"
             exit 1
         fi
@@ -750,7 +810,7 @@ except Exception as e:
             echo "Error: no from keyword found."
             exit 1
         fi
-
+        echo "0: $sql_command , where_ind: $where_index , semi_ind: $semicolon_index"
         expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
         echo "1: $expression"
 
@@ -797,6 +857,23 @@ evaluate_expression2() {
     result=$(python3 - <<EOF
 from datetime import datetime
 
+class AlwaysFalse:
+    def __lt__(self, other):
+        return False
+
+    def __le__(self, other):
+        return False
+
+    def __eq__(self, other):
+        return False
+
+    def __gt__(self, other):
+        return False
+
+    def __ge__(self, other):
+        return False
+
+A_null_value = AlwaysFalse()
 # Function to parse and compare dates
 def replace_dates(expression):
     def parse_date(match):
@@ -845,7 +922,13 @@ visulize_table(){
 
         # Replace column names with their respective values
         for (i = 1; i <= NF; i++) {
-            gsub("col" i, $i, eval_expr)
+            if ($i != ""){
+                gsub("col" i, $i, eval_expr)
+                gsub("col" i, $i, eval_up)
+            }
+            else if(eval_expr ~ "col" i){
+                eval_expr = ""
+            }
         }
         # replace "=" with "==" because the first is an assignment operand
         gsub(" = ", " == ", eval_expr)
@@ -874,8 +957,10 @@ visulize_table(){
                 fi
 
             else
-                parse_expr=$(evaluate_expression2 "$field")
-                
+                parse_expr=""
+                if [[ $field != "" ]]; then
+                    parse_expr=$(evaluate_expression2 "$field")
+                fi
                 if [[ $parse_expr == Error:* ]]; then
                     echo "An exception occurred: $parse_expr"
                     rm "$temp_file"
@@ -1017,7 +1102,8 @@ update_row() {
     local new_value="$4"
 
     # Define paths for the table and metadata
-    local base_dir="$HOME/Databases/students"
+    local base_dir="$curr_db_path"
+    check_db_selected "$curr_db_path"
     local table_path="$base_dir/$table_name.txt"
     local meta_path="$base_dir/.${table_name}.txt"
     local metadata_line=$(sed -n "$((column_index + 1))p" "$meta_path")
@@ -1039,23 +1125,26 @@ update_row() {
         echo "Error: Invalid row number. Table only has $row_count rows."
         return 1
     fi
-
     # Step 3: Get the specific row from the table (line corresponding to row_number)
     local row=$(sed -n "${row_number}p" "$table_path")
     IFS=':' read -ra row_values <<< "$row"  # Split the row based on ':'
-    echo "size is $size"
+
+    new_value=$(echo "$new_value" | xargs)
+    if [[ -z "$new_value" ]]; then
+        new_value=""
+    fi
     # Step 4: Validate the new value based on datatype
     local datatype="${table_datatypes[$((column_index-1))]}"
     case $datatype in
         int)
-            if ! [[ "$new_value" =~ ^[0-9]+$ ]]; then
+            if [[ -n "$new_value" && ! "$new_value" =~ ^[0-9]+$ ]]; then
                 echo "Error: '$new_value' is not a valid integer for column '${table_columns[$((column_index-1))]}'."
                 return 1
             fi
             ;;
         char)
             # Ensure the value is wrapped in double quotes for 'char' column
-            if ! [[ "$new_value" =~ ^[a-zA-Z0-9_\ ]+$ ]]; then
+            if [[ -n "$new_value" && ! "$new_value" =~ ^[a-zA-Z0-9_\ ]+$ ]]; then
                 echo "Error: '$new_value' is not a valid string for column '${table_columns[$((column_index-1))]}'."
                 return 1
             fi
@@ -1068,7 +1157,7 @@ update_row() {
             ;;
         date)
             # Validate date format (YYYY-MM-DD)
-                if ! [[ "$new_value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                if [[ -n "$new_value" && ! "$new_value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
                     echo "Error: Value '$new_value' for column '${table_columns[$((column_index-1))]}' must be in YYYY-MM-DD format."
                     return 1                 
                 fi
@@ -1102,9 +1191,7 @@ update_row() {
     # Unique constraint check (only if it's not a primary key)
     if [[  "$unique" -eq 1 ]]; then
         # Loop through each row in the table to check for duplicate values
-        echo "unique"
         local col_i=$((column_index ))
-        echo "$col_i"
         while IFS= read -r line; do
             field=$(echo "$line" | cut -d":" -f"$col_i")
             if [[ $datatype == "char" || $datatype == "date" ]]; then
@@ -1299,7 +1386,7 @@ function insert_with_test() {
                 value="\""$value"\""
                 ;;
             date)
-                if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                if ! [[ "$value" =~ ^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$ ]]; then
                     echo "Error: Value '$value' for column '$column' must be in YYYY-MM-DD format."
                     return 1                 
                 fi

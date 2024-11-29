@@ -29,6 +29,7 @@ create table employees(
 - You can select columns from a table and apply arithmetic operations on them.
 - You can also execute arithmetic expressions without specifying a table.
 - **Note**: You can only select from one table at a time (joins are not implemented yet).
+- **Note**: Any string or date must be placed between double quotes "".
 
 **Important:** Avoid using reserved keywords in lowercase within strings (e.g., `where name = "where"`), as this will produce an error. This issue will be fixed in an upcoming update.
 

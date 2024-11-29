@@ -107,3 +107,7 @@ run_test "SELECT * FROM huge_table;" " Thousands of rows"
 run_test "SELECT * FROM users WHERE (age > 20 AND age < 50) OR (registration_date > \"2022-01-01\");" " Complex WHERE conditions"
 
 run_test "select age + \"123\" from users where age>1;" "age>1"
+
+run_test "select id from employees where name = \" where \";" "string containing where in where condition"
+
+run_test "select id from employees where name = \" name \";" "string containing column name in where condition"
