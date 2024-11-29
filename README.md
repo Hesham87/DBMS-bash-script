@@ -1,6 +1,8 @@
 # DBMS-using-bash-script
 # Project README
 
+**Important:** For the project to run you need to create a Databases directory and a database_temp directory in your home directory.
+
 ## Features
 
 ### Create Table
