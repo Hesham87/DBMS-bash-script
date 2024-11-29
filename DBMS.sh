@@ -1,9 +1,11 @@
 #!/bin/bash
 
 
-
-
-#function to create table the output inside the file is column_name:data_type:range:primary_key:not_null:unique
+# Function to create table the output inside the file is column_name:data_type:range:primary_key:not_null:unique
+# It takes database path, table name, and the sql command as input.
+# PLEASE NOTE THAT, it was the first time that I used awk function and I thought it could be used like 
+# Then I found out that debugging it was a night mare and I never thought it will grow this big. 
+# CREATED BY: HESHAM BASSIOUNY
 createTB(){
     if [[ -e "$3/$1.txt" ]]; then
         echo "table already exists!"
@@ -215,7 +217,8 @@ createTB(){
     rm tempfile.txt
 }
 
-# Function to check if a database name is a valid table name database names can't contain hyphen ;-;
+# Function to check if a database name is a valid table name database name.
+# CREATED BY HESHAM BASSIOUNY
 check_database_name() {
     local database_name="$1"
     
@@ -245,7 +248,9 @@ check_database_name() {
     return 0
 }
 
-# Function to check if a name is a valid table name
+# Function to check if a name is a valid table name.
+# No difference between it and the check_database_name function but I created them at the begging because I thought there was a difference.
+# CREATED BY HESHAM BASSIOUNY.
 check_table_name() {
     local table_name="$1"
     
@@ -275,7 +280,10 @@ check_table_name() {
     return 0
 }
 
-# Function to check if braces are balanced, properly nested, and if there are extra characters after the last brace or semicolon and returns the string between the first brace and last brace
+# Function to check if braces are balanced, properly nested.
+# and if there are extra characters after the last brace or semicolon
+# returns the string between the first brace and last brace
+# CREATED BY HESHAM BASSIOUNY.
 braces_check() {
   local input="$1"  # Input string passed to the function
   local brace_count=0
@@ -336,6 +344,8 @@ braces_check() {
   return 0  # Return success status
 }
 
+# Function that checkes if there is a database selected or not.
+# CREATED BY HESHAM BASSIOUNY.
 check_db_selected(){
     if [[ "$1" == "" ]]; then
         echo "Error: no database selected."
@@ -343,6 +353,9 @@ check_db_selected(){
     fi
 }
 
+# Function that handles the use database command.
+# Takes the sql_command as an input.
+# CREATED BY HESHAM BASSIOUNY.
 select_db(){
     local sql_command="$1"
     third_word=$(echo "$sql_command" | awk '{print $3}') # get fourth word
@@ -363,7 +376,8 @@ select_db(){
     fi
     cd "$curr_db_path"
 }
-
+# Function that deletes a database and all its tables.
+# CREATED BY HESHAM BASSIOUNY.
 drop_db(){
     fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
 
@@ -384,7 +398,8 @@ drop_db(){
         rm -r "$delete_db_path"
     fi
 }
-
+# Function that delets a table.
+# CREATED BY HESHAM BASSIOUNY.
 drop_tb(){
     local curr_db_path="$1"
     local sql_command="$2"
@@ -413,7 +428,8 @@ drop_tb(){
         rm "$delete_tb_path_table"
     fi
 }
-
+# Function that Handles creating a databse.
+# CREATED BY HESHAM BASSIOUNY.
 create_db(){
     local sql_command="$1"
     fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
@@ -431,7 +447,9 @@ create_db(){
     fi
     mkdir ~/Databases/$database_name
 }
-
+# Auxilary function that returns the first index of a word that is not between quotes (in a string)
+# It returns -1 if not found and -2 if found more than once
+# CREATED BY HESHAM BASSIONY
 word_first_index(){
     string="$1"
     key="$2"
@@ -473,7 +491,9 @@ word_first_index(){
             print word_index
         }'
 }
-
+# AUXILARY function that returns the string between two indecies in a string.
+# Takes as an input the first index, the second index, and the string.
+# CREATED BY HESHAM BASSIOUNY.
 get_words_from_to(){
     string="$3"
     echo "$string" | awk -v from="$1" -v to="$2" '
@@ -485,7 +505,11 @@ get_words_from_to(){
             print string_x
         }'
 }
-
+# AUXILARY function that replaces the names of the columns with a string for example id will be col1 if it
+# Is the first column in the meta data and so on. If a column name is written in a string it doesn't replace it.
+# I would have used a more complex naming to aviod user accedintly writing (col1 for example) it in a string but
+# scince this is a personal project I didn't bother to do it for convinece.
+# CREATED BY HESHAM BASSIOUNY.
 replace_column_name(){
     local sql_command="$1"
     file="$2"
@@ -544,10 +568,17 @@ replace_column_name(){
     
 }
 
+# A function that evaluates the where and set clauses of update, delete, and select commands.
+# Takes as an input the where clause, main table, either an empty table (for select) or the string "update" or
+# the string "delete" for when updating or deleting, the update clause, and the column number to be updated.
+# The where and update clauses shoud be in the form "col1 + col2" and so on so there original names should be replaced
+# by the alias "colX".
+# I would have wrote better comments if I had time.
+# CREATED BY HESHAM BASSIOUNY
 evaluate_expression(){
-    expression="$1"   # The expression, e.g., "col1 + col2 > 10"
-    file="$2"         # data table (contains raws)
-    table="$3"        # temporary table to store the values to be shown in select statement
+    expression="$1"   # The expression, e.g., "col1 + col2 > 10" this is the where clause.
+    file="$2"         # data table (that contains raws). I know I should use a better name. but I wrote it 3 am so sorry.
+    table="$3"        # temporary table to store the values to be shown in select statement, or the command update or delete
     update_expr="$4"  # the set clause expression of the update statement
     col_num="$5"      # the number of the column to be updated in the update expression
 
@@ -632,6 +663,12 @@ except Exception as e:
     rm "$temp_file"
 }
 
+# Changes the sql command to lower case (while avoiding strings) and creates spaces before and after special characters.
+# Takes as an input the sql command.
+# Should be modified in the future to include all special characters which could be done with a pattern.
+# For now the modulo % and things other than the basic arithmatic operators must have spaces before and after
+# them to work properly.
+# CREATED BY HESHAM BASSIOUNY
 command_to_lower_with_spaces(){
     local sql_command="$1"
     output=""
@@ -687,13 +724,16 @@ command_to_lower_with_spaces(){
     echo "$output"
 }
 
+# A function that handles the select command takes as an input the curr_db_path - which is a global variable but 
+# due to time I haven't optimised the function- and the sql_command.
+# CREATED BY HESHAM BASSIOUNY.
 select_table(){
     local curr_db_path="$1"
     local sql_command="$2"
 
     check_db_selected "$curr_db_path"
 
-    keywords=("select" "where" "from" "group" "distinct" ";")
+    # keywords=("select" "where" "from" "group" "distinct" ";")
 
     # sql_command=$(echo "$sql_command" | tr 'A-Z' 'a-z')  # convert to lower case
 
@@ -810,26 +850,20 @@ except Exception as e:
             echo "Error: no from keyword found."
             exit 1
         fi
-        echo "0: $sql_command , where_ind: $where_index , semi_ind: $semicolon_index"
         expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
-        echo "1: $expression"
 
         expression=$(replace_column_name " $expression " "$curr_db_path/.$table_name.txt")
-        echo "2: $expression"
         table_file="$HOME/database_temp/table.txt"
         > "$table_file"
 
         evaluate_expression "$expression" "$curr_db_path/$table_name.txt" "$table_file"
-        cat "$table_file"
         
 
         select_sql=" $sql_command "
 
         select_statment=$(get_words_from_to "1" "$from_index" "$select_sql")
-        echo "5: $select_statment"
 
         select_replaced=$(replace_column_name " $select_statment " "$curr_db_path/.$table_name.txt")
-        echo "6: $select_replaced"
 
         visulize_table "$select_replaced" "$table_file" "$select_statment" "$full_header"
         rm "$table_file"
@@ -848,7 +882,10 @@ except Exception as e:
     fi
     
 }
-
+# AUXILARY FUNCTION used by the evaluate_expression function could have had a better name but I didn't modify it
+# due to time.
+# Takes as an input the processed expression (column names replaced by their value) and outputs the result.
+# CREATED BY HESHAM BASSIOUNY
 evaluate_expression2() {
     local expression="$1"
     expression="${expression//\"/\\\"}" # replace " with \"
@@ -871,6 +908,33 @@ class AlwaysFalse:
         return False
 
     def __ge__(self, other):
+        return False
+        
+    def __add__(self, other):
+        return False
+
+    def __sub__(self, other):
+        return False
+
+    def __mul__(self, other):
+        return False
+
+    def __truediv__(self, other):
+        return False
+
+    def __floordiv__(self, other): # Defines the behavior of floor division // (e.g., x // y).
+        return False
+
+    def __mod__(self, other):
+        return False
+
+    def __pow__(self, other): # Defines the behavior of the exponentiation operator ** (e.g., x ** y).
+        return False
+
+    def __neg__(self):  # Defines the behavior of the unary negative operator - (e.g., -x).
+        return False
+
+    def __pos__(self): # Responsible for defining the behavior of the unary positive operator + (e.g., +x).
         return False
 
 A_null_value = AlwaysFalse()
@@ -899,10 +963,16 @@ EOF
     # Return the result
     echo "$result"
 }
-
+# The function that handles final processing of the select statement It was originaly meant to print the table but
+# I realised later that it processed so much information about the select clause of the select command
+# For example it handles the select salry*2 part of the select command.
+# It takes as an input the select clause of the select command and the table containing the data to show.
+# An unhandled error is that when an intiger field is null and you preform arithmatic op on it it will show 0.
+# And if a field is named False it will show null. saw it 23 pm 29 Nov ;-;
+# CREATED BY HESHAM BASSIOUNY. 
 visulize_table(){
     local expression="$1"   # The expression, e.g., "col1 + col2 > 10"
-    local main_table="$2"         # The file to process, e.g., "file.csv"
+    local main_table="$2"         # The file to process, e.g., "file.txt"
     if [[ $expression == *\"* || $expression == *\'* ]]; then
         echo "Error: We don't currently support non-standard column names. please wait for further notice"
         exit 1
@@ -922,13 +992,15 @@ visulize_table(){
 
         # Replace column names with their respective values
         for (i = 1; i <= NF; i++) {
+            # print "1: " i " : " $i ": " eval_expr
             if ($i != ""){
                 gsub("col" i, $i, eval_expr)
-                gsub("col" i, $i, eval_up)
+                
             }
             else if(eval_expr ~ "col" i){
-                eval_expr = ""
+                gsub("col" i, "-A_null_value", eval_expr)
             }
+            # print "2: " i " : " $i ": " eval_expr
         }
         # replace "=" with "==" because the first is an assignment operand
         gsub(" = ", " == ", eval_expr)
@@ -938,7 +1010,7 @@ visulize_table(){
 
     }
     ' "$main_table"
-
+    # cat "$temp_file"
     counter=1
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
     select_table="$HOME/database_temp/select.txt"
@@ -960,6 +1032,10 @@ visulize_table(){
                 parse_expr=""
                 if [[ $field != "" ]]; then
                     parse_expr=$(evaluate_expression2 "$field")
+                    # echo "$parse_expr"
+                    if [[ $parse_expr == "False" ]]; then
+                        parse_expr=""
+                    fi
                 fi
                 if [[ $parse_expr == Error:* ]]; then
                     echo "An exception occurred: $parse_expr"
@@ -984,6 +1060,8 @@ visulize_table(){
 
 
 # Function to print a row with proper formatting
+# Prints row by row so the only input is the row.
+# CREATED BY HESHAM BASSIOUNY.
 print_row() {
     local row="$1"
     IFS=':' read -r -a columns <<< "$row"
@@ -997,7 +1075,10 @@ print_row() {
     echo
 }
 
-
+# Function that handles printing the entire table.
+# Takes as an input the header table (countained in the select statment), the date table, and all the headers (even those
+# not included in the select statment for when the astrics is used).
+# CREATED BY HESHAM BASSIOUNY.
 print_table(){
     # Define colors for the header
     HEADER_COLOR='\033[1;34m'  # Blue
@@ -1057,7 +1138,9 @@ print_table(){
     #     print_row "$row"
     # done
 }
-
+# A function that handles the initial processing of the createTB function should be placed all the way up with it.
+# takes as an input the curr_db_path which is a global variable so a bit redundant and the sql command.
+# CREATED BY HESHAM BASSIOUNY.
 create_table(){
     local curr_db_path="$1"
     local sql_command="$2"
@@ -1094,7 +1177,9 @@ create_table(){
     createTB "$table_name" "$values" "$curr_db_path"
 
 }
-
+# Function that handles the updating a certain row.
+# takes as an input the column number to be modified, the row number, the value, and the table to be modified in.
+# CREATED BY MOHAMED MAHER
 update_row() {
     local table_name="$1"
     local row_number="$2"
@@ -1157,19 +1242,26 @@ update_row() {
             ;;
         date)
             # Validate date format (YYYY-MM-DD)
-                if [[ -n "$new_value" && ! "$new_value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                if [[ -n "$new_value" && ! "$new_value" =~ ^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$ ]]; then
                     echo "Error: Value '$new_value' for column '${table_columns[$((column_index-1))]}' must be in YYYY-MM-DD format."
                     return 1                 
                 fi
                 # Extract the month and day from the date value
+                local year=$(echo "$new_value" | cut -d'-' -f1)
                 local month=$(echo "$new_value" | cut -d'-' -f2)
                 local day=$(echo "$new_value" | cut -d'-' -f3)
                 # Validate the month and day ranges
-                if ((month < 1 || month > 12)); then
+                if [[ $year < 1000 ]]; then
+                    echo "Error: Year '$year' for column '${table_columns[$((column_index-1))]}' must be more than a 1000"
+                    return 1
+                fi
+
+                if [[ $month -lt 1 || $month -gt 12 ]]; then
                     echo "Error: Month '$month' for column '${table_columns[$((column_index-1))]}' must be between 1 and 12."
                     return 1
                 fi
-                if ((day < 1 || day > 31)); then
+
+                if [[ $day -lt 1 || $day -gt 31 ]]; then
                     echo "Error: Day '$day' for column '${table_columns[$((column_index-1))]}' must be between 1 and 31."
                     return 1
                 fi
@@ -1227,7 +1319,9 @@ update_row() {
 
     echo "Row $row_number updated successfully in '$table_name'."
 }
-
+# Function that handles inserting in a table.
+# Takes as an input the current database path and sql command.
+# CREATED BY MOHAMED MAHER
 function insert_with_test() {
     local base_dir="$2"
 
@@ -1384,14 +1478,21 @@ function insert_with_test() {
                     return 1                 
                 fi
                 # Extract the month and day from the date value
+                local year=$(echo "$value" | cut -d'-' -f1)
                 local month=$(echo "$value" | cut -d'-' -f2)
                 local day=$(echo "$value" | cut -d'-' -f3)
                 # Validate the month and day ranges
-                if ((month < 1 || month > 12)); then
+                if [[ $year < 1000 ]]; then
+                    echo "Error: Year '$year' for column '$column' must be more than a 1000"
+                    return 1
+                fi
+    
+                if [[ $month -lt 1 || $month -gt 12 ]]; then
                     echo "Error: Month '$month' for column '$column' must be between 1 and 12."
                     return 1
                 fi
-                if ((day < 1 || day > 31)); then
+
+                if [[ $day -lt 1 || $day -gt 31 ]]; then
                     echo "Error: Day '$day' for column '$column' must be between 1 and 31."
                     return 1
                 fi
@@ -1458,7 +1559,9 @@ function insert_with_test() {
     echo "Record inserted successfully into '$table_name'."
  
 }
-
+# The delete command that deletes a certain row.
+# Takes as an input the sql command, the current database path, and the table name.
+# CREATED BY HESHAM BASSIOUNY
 delete_from(){
     local sql_command="$1"
     local db_path="$2"
@@ -1486,7 +1589,9 @@ delete_from(){
     fi
 
 }
-
+# A functions that process data that will be passed to the update_row function.
+# takes as an input the sql command only (finally).
+# CREATED BY HESHAM BASSIOUNY.
 update_tb(){
     local base_dir="$curr_db_path"
     check_db_selected "$base_dir"
@@ -1577,7 +1682,8 @@ update_tb(){
 
 curr_db_path=""
 
-
+# The main while loop.
+# CREATED BY HESHAM BASSIOUNY.
 while true; do 
     read -p "enter sql command: " sql_command
     sql_command=$(echo "$sql_command" | tr '()' '{}') #replace all '()' with '{}' due to errors with syntax in echo

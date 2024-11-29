@@ -31,7 +31,7 @@ create table employees(
 - **Note**: You can only select from one table at a time (joins are not implemented yet).
 - **Note**: Any string or date must be placed between double quotes "".
 
-**Important:** Avoid using reserved keywords in lowercase within strings (e.g., `where name = "where"`), as this will produce an error. This issue will be fixed in an upcoming update.
+**Important:** Avoid inserting placing a null ("") in the where clause as this will not show any data.
 
 #### Examples:
 ```sql
