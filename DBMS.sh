@@ -435,9 +435,9 @@ create_db(){
         echo "Creating Databases folder in $PWD"
         mkdir $PWD/Databases
     fi
-    if ! [[ -d "$PWD/database_temp" ]]; then
+    if ! [[ -d "$PWD/../../database_temp" ]]; then
         echo "Creating database_temp folder in $PWD"
-        mkdir $PWD/database_temp
+        mkdir $PWD/../../database_temp
     fi
     local sql_command="$1"
     fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
@@ -591,9 +591,9 @@ evaluate_expression(){
     col_num="$5"      # the number of the column to be updated in the update expression
 
     # echo "" | sed "s/\b$word\b/$replacement/g"
-    temp_file="$PWD/database_temp/temp87.txt"
+    temp_file="$PWD/../../database_temp/temp87.txt"
     > "$temp_file"
-    update_file="$PWD/database_temp/temp870.txt"
+    update_file="$PWD/../../database_temp/temp870.txt"
     > "$update_file"
     # echo "*******************$update_expr"
     awk -v expr="$expression" -v up_expr="$update_expr" -v up_file="$update_file" -v file="$temp_file" '
@@ -823,7 +823,7 @@ select_table(){
 
             select_statment=$(get_words_from_to "1" "$semicolon_index" "$sql_command")
             num_fields=$(echo "$select_statment" | awk -F"," '{print NF}')
-            select_table="$PWD/database_temp/select.txt"
+            select_table="$PWD/../../database_temp/select.txt"
             > "$select_table"
 
             for i in $(seq 1 $num_fields); do
@@ -861,7 +861,7 @@ except Exception as e:
         expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
 
         expression=$(replace_column_name " $expression " "$curr_db_path/.$table_name.txt")
-        table_file="$PWD/database_temp/table.txt"
+        table_file="$PWD/../../database_temp/table.txt"
         > "$table_file"
 
         evaluate_expression "$expression" "$curr_db_path/$table_name.txt" "$table_file"
@@ -984,7 +984,7 @@ visulize_table(){
         exit 1
     fi
     # echo "" | sed "s/\b$word\b/$replacement/g"
-    temp_file="$PWD/database_temp/temp87.txt"
+    temp_file="$PWD/../../database_temp/temp87.txt"
     > "$temp_file"
     # echo "$expression"
     awk -v expr="$expression" -v file="$temp_file" '
@@ -1019,7 +1019,7 @@ visulize_table(){
 
     counter=1
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
-    select_table="$PWD/database_temp/select.txt"
+    select_table="$PWD/../../database_temp/select.txt"
     > "$select_table"
     while IFS= read -r line; do
 \
