@@ -431,6 +431,14 @@ drop_tb(){
 # Function that Handles creating a databse.
 # CREATED BY HESHAM BASSIOUNY.
 create_db(){
+    if ! [[ -d "$HOME/Databases" ]]; then
+        echo "Creating Databases folder in $HOME"
+        mkdir ~/Databases
+    fi
+    if ! [[ -d "$HOME/database_temp" ]]; then
+        echo "Creating database_temp folder in $HOME"
+        mkdir ~/database_temp
+    fi
     local sql_command="$1"
     fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
 
