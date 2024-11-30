@@ -368,11 +368,11 @@ select_db(){
     database_name=$(echo "$sql_command" | awk '{print $2}') # get second word
     database_name=$(echo "$database_name" | tr 'A-Z' 'a-z')
 
-    if ! [[ -d "$HOME/Databases/$database_name" ]]; then
+    if ! [[ -d "$PWD/Databases/$database_name" ]]; then
         echo "Error: No such database: $database_name"
         exit 1
     else
-        curr_db_path="$HOME/Databases/$database_name"
+        curr_db_path="$PWD/Databases/$database_name"
     fi
     cd "$curr_db_path"
 }
@@ -388,7 +388,7 @@ drop_db(){
 
     database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
     database_name=$(echo "$database_name" | tr 'A-Z' 'a-z')
-    delete_db_path="$HOME/Databases/$database_name"
+    delete_db_path="$PWD/Databases/$database_name"
 
     if ! [[ -d "$delete_db_path" ]]; then
         echo "Error: No such database: $database_name"
@@ -431,13 +431,13 @@ drop_tb(){
 # Function that Handles creating a databse.
 # CREATED BY HESHAM BASSIOUNY.
 create_db(){
-    if ! [[ -d "$HOME/Databases" ]]; then
-        echo "Creating Databases folder in $HOME"
-        mkdir ~/Databases
+    if ! [[ -d "$PWD/Databases" ]]; then
+        echo "Creating Databases folder in $PWD"
+        mkdir $PWD/Databases
     fi
-    if ! [[ -d "$HOME/database_temp" ]]; then
-        echo "Creating database_temp folder in $HOME"
-        mkdir ~/database_temp
+    if ! [[ -d "$PWD/database_temp" ]]; then
+        echo "Creating database_temp folder in $PWD"
+        mkdir $PWD/database_temp
     fi
     local sql_command="$1"
     fourth_word=$(echo "$sql_command" | awk '{print $4}') # get fourth word
@@ -449,11 +449,11 @@ create_db(){
 
     database_name=$(echo "$sql_command" | awk '{print $3}') # get third word
     check_database_name "$database_name"
-    if [ -d "$HOME/Databases/$database_name" ]; then
+    if [ -d "$PWD/Databases/$database_name" ]; then
         echo "Error: Directory already exists!"
         exit 1
     fi
-    mkdir ~/Databases/$database_name
+    mkdir $PWD/Databases/$database_name
 }
 # Auxilary function that returns the first index of a word that is not between quotes (in a string)
 # It returns -1 if not found and -2 if found more than once
@@ -591,9 +591,9 @@ evaluate_expression(){
     col_num="$5"      # the number of the column to be updated in the update expression
 
     # echo "" | sed "s/\b$word\b/$replacement/g"
-    temp_file="$HOME/database_temp/temp87.txt"
+    temp_file="$PWD/database_temp/temp87.txt"
     > "$temp_file"
-    update_file="$HOME/database_temp/temp870.txt"
+    update_file="$PWD/database_temp/temp870.txt"
     > "$update_file"
     # echo "*******************$update_expr"
     awk -v expr="$expression" -v up_expr="$update_expr" -v up_file="$update_file" -v file="$temp_file" '
@@ -823,7 +823,7 @@ select_table(){
 
             select_statment=$(get_words_from_to "1" "$semicolon_index" "$sql_command")
             num_fields=$(echo "$select_statment" | awk -F"," '{print NF}')
-            select_table="$HOME/database_temp/select.txt"
+            select_table="$PWD/database_temp/select.txt"
             > "$select_table"
 
             for i in $(seq 1 $num_fields); do
@@ -861,7 +861,7 @@ except Exception as e:
         expression=$(get_words_from_to "$where_index" "$semicolon_index" "$sql_command")
 
         expression=$(replace_column_name " $expression " "$curr_db_path/.$table_name.txt")
-        table_file="$HOME/database_temp/table.txt"
+        table_file="$PWD/database_temp/table.txt"
         > "$table_file"
 
         evaluate_expression "$expression" "$curr_db_path/$table_name.txt" "$table_file"
@@ -984,7 +984,7 @@ visulize_table(){
         exit 1
     fi
     # echo "" | sed "s/\b$word\b/$replacement/g"
-    temp_file="$HOME/database_temp/temp87.txt"
+    temp_file="$PWD/database_temp/temp87.txt"
     > "$temp_file"
     # echo "$expression"
     awk -v expr="$expression" -v file="$temp_file" '
@@ -1019,7 +1019,7 @@ visulize_table(){
 
     counter=1
     num_fields=$(echo "$expression" | awk -F"," '{print NF}')
-    select_table="$HOME/database_temp/select.txt"
+    select_table="$PWD/database_temp/select.txt"
     > "$select_table"
     while IFS= read -r line; do
 \
@@ -1782,7 +1782,7 @@ while true; do
             keyword=$(echo "$keyword" | tr 'A-Z' 'a-z')
             
             if [[ "$keyword" == "databases" ]]; then
-                ls ~/Databases
+                ls $PWD/Databases
             
             elif [[ "$keyword" == "tables" ]]; then
                 if [[ "$curr_db_path" == "" ]]; then
