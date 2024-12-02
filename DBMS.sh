@@ -53,13 +53,16 @@ createTB(){
         unique=0
         data_type=0
         for (i = 1; i <= NF; i++) {
+            # Only column name (one word)
             if (NF == 1){
                     print "you must define a data type"
                     exit_check=1
                     exit 1
             }
+            # remove trailing white space ( *$/) and begining white space ( *)
             gsub(/^ *| *$/, "", $i)  # Trim whitespace from each field
 
+            # check for primary_key, not_null, and unique constraints.
             if (i > 1) {
                 if ($i == "primary_key") {
 
@@ -102,9 +105,10 @@ createTB(){
                         exit 1
                     }
 
-                    # print data type into temp file
+                    # print data type into temp file char is a four character word.
                     printf "%s", substr($i, 1, 4) >> ("tempfile.txt")
                     printf ":" >> ("tempfile.txt")
+                    # get get the rest of the string {number}
                     printf "%s", substr($i, 5) >> ("tempfile.txt")
                     printf ":" >> ("tempfile.txt") 
                 }                                                                                   # -E, --extended-regexp     PATTERNS are extended regular expressions Provides more advanced syntax compared to basic regular expressions (BRE).
@@ -117,7 +121,7 @@ createTB(){
                         exit_check=1
                         exit 1
                     }
-                    # print data type into temp file
+                    # print data type into temp file int is a three letter word.
                     printf "%s", substr($i, 1, 3) >> ("tempfile.txt")
                     printf ":" >> ("tempfile.txt")
                     printf "%s", substr($i, 4) >> ("tempfile.txt")
@@ -150,7 +154,7 @@ createTB(){
                 
                 attribute_names[attribute_number]=$i
                 attribute_number+=1
-                # Call the check_column_name function for each column name
+                
                 printf $i >> ("tempfile.txt")
                 printf ":" >> ("tempfile.txt")
             }
@@ -172,7 +176,6 @@ createTB(){
                 printf "0\n" >> ("tempfile.txt")
             }
         }
-        # print ";;" >> ("tempfile.txt")
     }
     END {
         if (exit_check == 1){
@@ -183,13 +186,13 @@ createTB(){
             print "error: no attributes assigned."
             exit 1
         }
-
+        # check if the user entered an empty field (, ,)
         if (attribute_number < NR){
             print "error: unexpected \",\" "
             exit 1
         }
 
-
+        # Call the check_column_name function for each column name
         for (i = 0; i < length(attribute_names); i++) {
             exit_check=check_column_name(attribute_names[i])
             if (exit_check == 1){
