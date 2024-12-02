@@ -696,33 +696,12 @@ command_to_lower_with_spaces(){
                 else
                     in_quotes=0
                 fi
-                output+="$char"
-            elif [[ "$char" == "-" && $in_quotes -eq 0 ]]; then
-                output+=" - "
-            elif [[ "$char" == "+" && $in_quotes -eq 0 ]]; then
-                output+=" + "
-            elif [[ "$char" == "*" && $in_quotes -eq 0 ]]; then
-                output+=" * "
-            elif [[ "$char" == "/" && $in_quotes -eq 0 ]]; then
-                output+=" / "
-            elif [[ "$char" == "{" && $in_quotes -eq 0 ]]; then
-                output+=" { "
-            elif [[ "$char" == "}" && $in_quotes -eq 0 ]]; then
-                output+=" } "
-            elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
-                output+=" , " 
-            elif [[ "$char" == ">" && ${sql_command:counter:1} == "=" && $in_quotes -eq 0 ]]; then
-                output+=" >= "
+                output+="$char" 
+            elif [[ (! "$char" =~ ^[a-zA-Z0-9_\ ]+$) && (! ${sql_command:counter:1} =~ ^[a-zA-Z0-9_\ ]+$) && $in_quotes -eq 0 ]]; then
+                output+=" $char${sql_command:counter:1} "
                 skip=2
-            elif [[ "$char" == "<" && ${sql_command:counter:1} == "=" && $in_quotes -eq 0 ]]; then
-                output+=" <= "
-                skip=2
-            elif [[ "$char" == ">" && $in_quotes -eq 0 ]]; then
-                output+=" > "
-            elif [[ "$char" == "<" && $in_quotes -eq 0 ]]; then
-                output+=" < "
-            elif [[ "$char" == "=" && $in_quotes -eq 0 ]]; then
-                output+=" = "      
+            elif [[ (! "$char" =~ ^[a-zA-Z0-9_\ ]+$) && $in_quotes -eq 0 ]]; then 
+                output+=" $char "     
             elif [[ $in_quotes -eq 0 ]]; then
                 output+=$(echo "$char" | tr 'A-Z' 'a-z')  #convert to lower case
             else
