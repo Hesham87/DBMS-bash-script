@@ -3,8 +3,8 @@
 
 # Function to create table the output inside the file is column_name:data_type:range:primary_key:not_null:unique
 # It takes database path, table name, and the sql command as input.
-# PLEASE NOTE THAT, it was the first time that I used awk function and I thought it could be used like 
-# Then I found out that debugging it was a night mare and I never thought it will grow this big. 
+# PLEASE NOTE THAT, it was the first time that I used awk function and I thought it could be used like this
+# Then I found out that debugging it was a nightmare and I never thought it will grow this big. 
 # CREATED BY: HESHAM BASSIOUNY
 createTB(){
     if [[ -e "$3/$1.txt" ]]; then
